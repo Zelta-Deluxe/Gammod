@@ -1,0 +1,18 @@
+import funkin.modding.module.Module;
+import funkin.util.Constants;
+import funkin.play.PlayState;
+import flixel.FlxSprite;
+
+class GammodMain extends Module
+{
+	final DEFAULT_SCORE_MULTIPLIER = 1;
+	var score_multiplier: Int = 1;
+
+	var leftHealthBarColor: FlxSprite;
+	var rightHealthBarColor: FlxSprite;
+
+	public function new()
+	{
+		super('GammodMain');
+	}
+}

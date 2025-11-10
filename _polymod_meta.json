@@ -1,0 +1,23 @@
+{
+	"title": "Gammod",
+	"description": "Gameplay modifiers to pump up those highscores",
+	"homepage": "pending",
+	"contributors": 
+	[
+		{
+			"name": "Zelta",
+			"description": "Look at this dude.",
+			"role": "Author",
+			"url": "https://gamebanana.com/members/1893619"
+		}
+	],
+	"dependencies": 
+	[
+		{
+			"Fukkit": ">=1.0.0"
+		}
+	],
+	"api_version": "0.7.4",
+	"mod_version": "1.0.0",
+	"license": "Apache-2.0"
+}

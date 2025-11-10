@@ -1,0 +1,159 @@
+import funkin.modding.module.ModuleHandler;
+import funkin.modding.module.Module;
+import funkin.play.PlayState;
+import funkin.play.PlayStatePlaylist;
+import funkin.ui.mainmenu.MainMenuState;
+import flixel.FlxG;
+import Bool;
+import Array;
+import Int;
+import Float;
+import String;
+import Type;
+
+/*
+MOD MULTIPLIERS:
+- if the mod is a switch, multiplier is a float that applies if active.
+- if the mod is a list, multiplier is an array of floats of the same length as the possible values, each value pairs with its value.
+- if the mod is an intRange, multiplier is how much mult applies per unit of difference from the default value 
+	(if multiplier == 0.5 & value == 2 & default_value == 0, totalMult = 1)
+- if the mod is a floatRange, value difference is straight up added to the mult and multiplier is a multiplier for how much is added.
+	(if multiplier == 0.5 & value == 2 & default_value == 1, totalMult = 1)
+	(if multiplier == 1 & value == 2 & default_value == 1, totalMult = 2)
+*/
+
+class GammodModHandler extends Module
+{
+	final MOD_TYPE: Map<String, Array> =
+	[
+		'Switch' => [],
+		'FloatRange' => ['Float', 'Float'],
+		'IntRange' => ['Int', 'Int'],
+		'List' => ['Array']
+	];
+
+	var registered_mods:Map<String, Module> = 
+	[
+		'Gammod Default' => null
+	];
+
+	var remembered_values:Map<String, Dynamic> =
+	[
+		'Gammod Default' => null
+	];
+	
+	public function new()
+	{
+		super('GammodModHandler');
+	}
+
+	public function setModValue(mod:String, new_value):Void
+	{
+		if (classToType(new_value) == ModuleHandler.getModule('GammodMod_' + mod).type)
+		{
+			ModuleHandler.getModule('GammodMod_' + mod).value = new_value;
+		}
+	}
+
+	public function classToType(variable):String
+	{
+		if (Std.isOfType(variable, Bool))
+		{
+			return 'Switch';
+		}
+		else if (Std.isOfType(variable, Array))
+		{
+			if (Std.isOfType(variable[0], Int))
+			{
+				if (variable.length() != 2) return 'Unknown';
+				return 'IntRange';
+			}
+			else if (Std.isOfType(variable[0], Float))
+			{
+				if (variable.length() != 2) return 'Unknown';
+				return 'FloatRange';
+			}
+			else if (Std.isOfType(variable[0], String))
+			{
+				return 'List';
+			}
+		}
+		else
+		{
+			return 'Unknown';
+		}
+	}
+
+	public function checkDefault(mod:Module):Bool
+	{
+		switch(mod.type)
+		{
+			case 'Switch':
+				if (mod.value != mod.default_value)
+				{
+					return false;
+				}
+			default:
+				if (mod.value != mod.default_value[0])
+				{
+					return false;
+				}
+		}
+		return true;
+	}
+
+	public override function onSubStateOpenBegin():Void
+	{
+		super.onSubStateOpenBegin();
+
+		registered_mods.clear();
+		for (module in ModuleHandler.moduleCache.keys())
+		{
+			if (module.indexOf('GammodMod_') == 0)
+			{
+				registered_mods[module] = ModuleHandler.getModule(module);
+				trace('Registered mod by the name of "' + module + '".');
+			}
+		}
+	}
+
+	public override function onSongLoaded(event) 
+	{
+		super.onSongLoaded(event);
+
+		if (PlayStatePlaylist.isStoryMode)
+		{
+			trace('This is Story Mode. Defaulting all Gammod modifiers.');
+			remembered_values.clear();
+			for (mod in registered_mods.keys())
+			{
+				remembered_values[mod] = registered_mods[mod].value;
+				trace('Previous value of "' + registered_mods[mod].display_name + '": ' + registered_mods[mod].value);
+				switch(registered_mods[mod].type)
+				{
+					case 'Switch':
+						registered_mods[mod].value = registered_mods[mod].default_value;
+					default:
+						registered_mods[mod].value = registered_mods[mod].default_value[0];
+				}
+				trace('New value of "' + registered_mods[mod].display_name + '": ' + registered_mods[mod].value);
+			}
+		}
+	}
+
+	public override function onStateChangeEnd(event) 
+	{
+		super.onStateChangeEnd(event);
+
+		if (false) // MAKE THIS A CONDITION THAT IS ONLY TRUE IF YOU'RE GETTING OUT OF A STORY MODE WEEK, IDK WHY WONT IT WORK
+		{
+			trace('Giving previous values to all Gammod modifiers.');
+			for (mod in registered_mods.keys())
+			{
+				trace('Previous value of "' + registered_mods[mod].display_name + '": ' + registered_mods[mod].value);
+				registered_mods[mod].value = remembered_values[mod];
+				trace('New value of "' + registered_mods[mod].display_name + '": ' + registered_mods[mod].value);
+			}
+		}
+	}
+}

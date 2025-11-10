@@ -1,0 +1,184 @@
+import funkin.modding.module.Module;
+import flixel.tweens.FlxTween;
+import flixel.util.FlxTimer;
+import flixel.tweens.FlxEase;
+import flixel.tweens.misc.VarTween;
+import flixel.util.FlxTimer;
+import lime.math.Vector2;
+
+// Todo here:
+// - Callbacks using the ScriptEvent system and tags.
+
+class FukkitTweenManager extends Module
+{
+	var tweens: Map<String, FlxTween> = ['default' => null];
+	private var tween_timers: Map<String, FlxTimer> = ['default' => null];
+	final EASINGS: Map<String, FlxEase> = 
+	[
+		'linear' => FlxEase.linear,
+		'quadIn' => FlxEase.quadIn,
+		'quadOut' => FlxEase.quadOut,
+		'quadInOut' => FlxEase.quadInOut,
+		'cubicIn' => FlxEase.cubicIn,
+		'cubicOut' => FlxEase.cubicOut,
+		'cubicInOut' => FlxEase.cubicInOut,
+		'quartIn' => FlxEase.quartIn,
+		'quartOut' => FlxEase.quartOut,
+		'quartInOut' => FlxEase.quartInOut,
+		'quintIn' => FlxEase.quintIn,
+		'quintOut' => FlxEase.quintOut,
+		'quintInOut' => FlxEase.quintInOut,
+		'sineIn' => FlxEase.sineIn,
+		'sineOut' => FlxEase.sineOut,
+		'sineInOut' => FlxEase.sineInOut,
+		'expoIn' => FlxEase.expoIn,
+		'expoOut' => FlxEase.expoOut,
+		'expoInOut' => FlxEase.expoInOut,
+		'circIn' => FlxEase.circIn,
+		'circOut' => FlxEase.circOut,
+		'circInOut' => FlxEase.circInOut,
+	];
+	final TYPES: Map<String, FlxTween.TYPE> = 
+	[
+		'oneshot' => FlxTween.ONESHOT,
+		'looping' => FlxTween.LOOPING,
+		'persist' => FlxTween.PERSIST,
+		'backward' => FlxTween.BACKWARD,
+		'pingpong' => FlxTween.PINGPONG
+	];
+
+	public function new()
+	{
+		super('FukkitTweenManager');
+
+		tweens.clear();
+
+		priority = 0;
+	}
+
+	public function tween(tag: String, object, values, duration, delay: Int = 0, easing: String = 'linear', type: String = 'oneshot', ?oncomplete)
+	{
+		var onComplete_parameter = oncomplete;
+		if (tweens[tag] == null)
+		{
+			var _tag: String = tag;
+			tweens[tag] = FlxTween.tween
+			(
+				object, 
+				values, 
+				duration,
+				{
+					ease: EASINGS[easing],
+					type: TYPES[type],
+					startDelay: delay,
+					onComplete: function(tween) 
+					{
+						if (onComplete_parameter != null) onComplete_parameter(tween);
+						tweens.remove(_tag);
+					}
+				}
+			);
+			trace('Created tween with tag "' + tag + '".');
+		} 
+		else
+		{
+			trace('Tried to create tween, but a tween with tag "' + tag + '" already exists!');
+		}
+	}
+
+	public function color(tag: String, object, values, duration: Float, delay: Int = 0, easing: String = 'linear', type: String = 'oneshot', ?oncomplete)
+	{
+		var onComplete_parameter = oncomplete;
+		if (tweens[tag] == null)
+		{
+			var _tag: String = tag;
+			tweens[tag] = FlxTween.color
+			(
+				object,
+				duration,
+				object.color,
+				values,
+				{
+					ease: EASINGS[easing],
+					type: TYPES[type],
+					startDelay: delay,
+					onComplete: function(tween) 
+					{
+						if (onComplete_parameter != null) onComplete_parameter(tween);
+						tweens.remove(_tag);
+					}
+				}
+			);
+			trace('Created color tween with tag "' + tag + '".');
+		} 
+		else
+		{
+			trace('Tried to create color tween, but a tween with tag "' + tag + '" already exists!');
+		}
+	}
+
+	public function exists(tag: String):Bool
+	{
+		for (search in tweens.keys())
+		{
+			if (tag == search)
+			{
+				return true;
+			}
+		}
+		return false;
+	}
+
+	public function cancel(tag: String)
+	{
+		if (tweens[tag] != null)
+		{
+			tweens[tag].cancel();
+			tweens.remove(tag);
+			trace('Cancelled tween with tag "' + tag + '".');
+		} else
+		{
+			trace('Tried to cancel tween, but a tween with tag "' + tag + '" is not active!');
+		}
+	}
+
+	public function pause(tag: String)
+	{
+		if (tweens[tag] != null)
+		{
+			tweens[tag].active = false;
+			trace('Pausing tween with tag "' + tag + '".');
+		} else
+		{
+			trace('Tried to pause tween, but a tween with tag "' + tag + '" is not active!');
+		}
+	}
+
+	public function resume(tag: String)
+	{
+		if (tweens[tag] != null)
+		{
+			tweens[tag].active = true;
+			trace('Pausing tween with tag "' + tag + '".');
+		} else
+		{
+			trace('Tried to resume tween, but a tween with tag "' + tag + '" is not active!');
+		}
+	}
+
+	public function batchCancel(prefix: String)
+	{
+
+	}
+
+	public function batchPause(prefix: String)
+	{
+		for (tag in tweens.keys())
+		{
+			if (tag.indexOf(prefix) != -1)
+			{
+				pause(tag);
+			}
+		}
+	}
+}

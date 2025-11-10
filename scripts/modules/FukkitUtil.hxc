@@ -1,0 +1,31 @@
+import funkin.modding.module.Module;
+import funkin.modding.module.ModuleHandler;
+import flixel.text.FlxText;
+
+class FukkitUtil extends Module
+{
+	function new()
+    	{
+		super('FukkitUtil');
+
+		priority = 0;
+	}
+
+	public function createText(text:String = '', positions:Array<Int> = [0,0], size:Int = 10, ?font:String, ?alignment:String):FlxText
+  	{
+      	var output:FlxText = new FlxText(positions[0], positions[1], 0, text, size);
+
+    		if (font != null)
+    		{
+      		output.setFormat(font, size, null, alignment ?? 'center', FlxTextBorderStyle.OUTLINE, 0xFF000000);
+    		}
+
+    		return output;
+  	}
+
+	public function flick(time:Float, interval:Float, startAtOne:Bool = false):Int 
+	{
+	     var alternance: Int = Std.int(Math.floor(time / interval)) % 2;
+	     return startAtOne ? (1 - alternance) : alternance;
+    	}
+}

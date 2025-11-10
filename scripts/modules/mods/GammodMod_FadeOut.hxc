@@ -1,0 +1,70 @@
+import funkin.modding.module.Module;
+import funkin.modding.module.ModuleHandler;
+import funkin.play.PlayState;
+import flixel.math.FlxMath;
+import funkin.Conductor;
+import funkin.util.Constants;
+import flixel.FlxG;
+import funkin.util.GRhythmUtil;
+import funkin.Preferences;
+import Math;
+
+/*
+PLAN PARA MEJORAR ESTO:
+- 1. vamo a comprobar en que posicion spawnea la nota, (a una velocidad fija)
+- 2. vamo a comprobar cuanto tarda en llegar, (a una velocidad fija)
+- tle. agarrar eso y añadirlo a la formula!
+*/
+
+
+class GammodMod_FadeOut extends Module
+{
+	var display_name: String = 'Fade Out';
+	var type: String = 'Switch'; // Boolean value, true or false.
+	var default_value: Bool = false;
+	var value: Bool;
+	var color: Int = 0xFF00aaff;
+	var hidden: Bool = true;
+	var multiplier: Float = 0.2;
+
+	var fade_speed:Float = 0.2;
+	var fade_delay:Float = 1.1;
+
+	public function new()
+	{
+		super('GammodMod_FadeOut');
+
+		value = default_value;
+		state = PlayState;
+	}
+
+	public override function onNoteIncoming(event:NoteScriptEvent) 
+	{
+		if (value)
+		{
+			var v = Constants.PIXELS_PER_MS * PlayState.instance.currentChart.scrollSpeed;
+			var deltaTime = (GRhythmUtil.getNoteY(event.note.noteData.time, PlayState.instance.currentChart.scrollSpeed, Preferences.get_downscroll()) - (FlxG.height/2)) / v;
+			// Thank you ChatGPT (not really this is shit) 
+			// Gotta fix these formulas cuz they are fixed for mild speeds, really slow or fast speeds ruin the effect, but idk how, maths are hard and vslice doesnt help :(
+
+			trace(Math.abs(deltaTime / 1000) - 1);
+			ModuleHandler.getModule('FukkitTweenManager').cancel('fadeOut_note' + event.note.ID);
+			ModuleHandler.getModule('FukkitTweenManager').tween
+			(
+				'fadeOut_note' + event.note.ID,
+				event.note,
+				{ alpha: 0 },
+				0.1 / PlayState.instance.currentChart.scrollSpeed,
+				Math.abs(deltaTime / 1000) - ((1 - 0.5 * ((PlayState.instance.currentChart.scrollSpeed - 1.5) / 1.7)) - (0.1 / PlayState.instance.currentChart.scrollSpeed))
+			); // May the god of maths forgive me today for my sins.
+		}
+	}
+
+	// 0.5 PARA BLAZING [HARD] (x3.2)
+	// 1 PARA BOPEEBO PICO MIX [EASY] (x1.5)
+
+	public function onPause(event:PauseScriptEvent) 
+	{
+		ModuleHandler.getModule('FukkitTweenManager').batchPause('fadeOut_note');
+	}
+}

@@ -1,0 +1,106 @@
+import funkin.modding.module.Module;
+import funkin.modding.module.ModuleHandler;
+import funkin.ui.mainmenu.MainMenuState;
+import funkin.ui.freeplay.FreeplayState;
+import funkin.audio.FunkinSound;
+import flixel.FlxG;
+
+// This guy will manage activity in the FreeplayState so we can trigger the mods menu and such.
+
+class GammodFreeplayModule extends Module
+{
+	var current_state: FreeplayState = null;
+	var show_character_hint: Bool = true;
+	var show_character_hint_gate: Bool = false;
+	var can_switch_mod_menu: Bool = false;
+	var mod_menu_open: Bool = false;
+
+	public function new()
+    	{
+		super('GammodFreeplayModule');
+
+		state = FreeplayState;
+	}
+
+	private function updateCurrentState()
+	{
+		if (FlxG.state != null)
+		{
+			current_state = FlxG.state;
+			if (current_state.subState != null)
+			{
+				current_state = current_state.subState;
+			}
+		}
+	}
+
+	public override function onUpdate(event: UpdateScriptEvent)
+	{
+		super.onUpdate(event);
+
+		updateCurrentState();
+
+		if (current_state is FreeplayState)
+		{
+			if (FlxG.sound.music != null)
+			{
+				FlxG.sound.music.pitch = ModuleHandler.getModule('GammodMod_PlaybackRate').value;
+			}
+		}
+		
+		if (current_state.charSelectHint.alpha < 0.4 && !show_character_hint_gate)
+		{
+			show_character_hint = !show_character_hint;
+			show_character_hint_gate = true;
+		} 
+		else if (current_state.charSelectHint.alpha > 0.6)
+		{
+			show_character_hint_gate = false;
+		}
+		if (show_character_hint)
+		{
+			current_state.charSelectHint.text = 'Press [TAB] to change characters';
+		} 
+		else 
+		{
+			current_state.charSelectHint.text = 'Press [SHIFT] to plug mods in';
+		}
+
+		if (FlxG.keys.justPressed.SHIFT && FlxG.state.subState.subState == null && FlxG.state.subState.capsuleOptionsMenu == null)
+		{
+			if (!mod_menu_open)
+			{
+				FunkinSound.playOnce(Paths.sound('confirmMenu'));
+				openModsMenu();
+			} else
+			{
+				closeModsMenu();
+			}
+		}
+	}
+
+	public function openModsMenu()
+	{
+		mod_menu_open = true;
+		ModuleHandler.getModule('GammodStateHandler').openGammodMenu();
+	}
+
+	public function closeModsMenu()
+	{
+
+	}
+
+	public override function onSubStateOpenBegin(event:SubStateScriptEvent) 
+	{
+		super.onSubStateOpenBegin(event);
+
+		updateCurrentState();
+	}
+
+	public override function onSubStateOpenEnd(event:SubStateScriptEvent) 
+	{
+		super.onSubStateOpenEnd(event);
+
+		mod_menu_open = false;
+	}
+}

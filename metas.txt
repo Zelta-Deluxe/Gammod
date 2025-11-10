@@ -1,0 +1,43 @@
+PARA ALPHA:
+- Que los mods muestren si estan en modo default o no
+- Mini animacion para los tecstos cuando cambian de contenido
+- Calcular y mostrar el multiplicador actual (sin aplicarlo aun)
+
+PARA UPDATES:
+- Contador de arriba reworkeado
+- Dejar mantener las teclas para moverse por el menu
+- Que no se buguee cuando entras al freeplay con musica y playback rate incrementado
+- Multiplicar la dificultad y bpm de las canciones por el playback rate
+- Parametros de modificadores, y hacerlos configurables
+- Aplicar el mulitplicador actual y guardarlo
+- Textos de 0 y 1 que caen desde arriba
+- Buscador de modificadores
+
+MODS POR HACER:
+- Long Notes (list) (sets multiplier to 0 if not default)
+	- Default (notes remain the same) (default value)
+	- Remove (all LN's become SN's)
+	- Full (all SN's become LN's)
+	- Switch (SN's become LN's and viceversa)
+
+- Botplay (bool) (sets multiplier to 0 if not default)
+
+- Mirror (bool) (does not modify score) (mirrors notes horizontally)
+
+- Health drain (float range [0.0-1.0]) (+0.01 multiplier per step towards 1) (enemy's notes retrieve health from you 0.05 per step)
+
+- Health gain (float range [1.0-0]) (+0.02 multiplier per step towards 0) (how much your notes retrieve health from the enemy)
+
+
+HECHO:
+- Centrar flecha modificadores
+- (SI ES POSIBLE) Pasar todo a sub estado.
+	-TERMINADO, pero ahora añade la transicion chula ahi
+- Dejar usar la rueda del mouse para moverse por el menu
+
+
+
+PROBLEMA PARA SOLUCIONAR ESTE BUG:
+- Los botones se crean con el sticker
+- El sticker empieza con mala posicion
+- Spamear el sticker lo baja automaticamente (y eso cambia el height y esta chungo)

@@ -1,0 +1,29 @@
+import funkin.modding.module.Module;
+import funkin.modding.base.ScriptedMusicBeatState;
+import funkin.modding.base.ScriptedMusicBeatSubState;
+import funkin.ui.MusicBeatState;
+import flixel.FlxG;
+
+class GammodStateHandler extends Module
+{
+	var gammodMenu: MusicBeatState = null;
+	var remembered_mod_position: Int = 0;
+
+	public function new()
+    	{
+		super('GammodStateHandler');
+	}
+
+	public function openGammodMenu()
+	{
+		gammodMenu = ScriptedMusicBeatSubState.init('GammodMenu');
+		gammodMenu.camera = FlxG.state.subState.funnyCam;
+		FlxG.state.subState.persistentUpdate = false;
+		FlxG.state.subState.openSubState(gammodMenu);
+	}
+
+	public function closeGammodMenu()
+	{
+		
+	}
+}

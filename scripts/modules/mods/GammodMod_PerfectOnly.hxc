@@ -1,0 +1,74 @@
+import funkin.modding.module.Module;
+import funkin.play.PlayState;
+import funkin.util.Constants;
+import funkin.audio.FunkinSound;
+
+class GammodMod_PerfectOnly extends Module
+{
+	var display_name: String = 'Perfect Only';
+	var type: String = 'Switch';
+	var default_value: Bool = false;
+	var value: Bool;
+	var color: Int = 0xFFFDF62B;
+	var hidden: Bool = false;
+	var multiplier: Float = 0;
+
+	public function new()
+	{
+		super('GammodMod_PerfectOnly');
+
+		value = default_value;
+		state = PlayState;
+	}
+
+	public override function onNoteHit(event:HitNoteScriptEvent)
+  	{
+		if (value && event.judgement != 'sick' && event.note.noteData.getMustHitNote())
+		{
+			perfectOnlyRestart();
+		}
+	}
+
+	public override function onNoteMiss(event:HitNoteScriptEvent)
+  	{
+		if (value)
+		{
+			perfectOnlyRestart();
+		}
+	}
+
+	public override function onNoteGhostMiss(event:GhostMissNoteScriptEvent) 
+	{
+		if (value)
+		{
+			perfectOnlyRestart();
+		}
+	}
+
+	public override function onSongStart(event:ScriptEvent)
+	{
+		super.onSongStart(event);
+
+		if (value)
+		{
+			Constants.GHOST_TAPPING = false;
+		}
+	}
+
+	public function perfectOnlyRestart()
+	{
+		PlayState.instance.needsReset = true;
+		Constants.GHOST_TAPPING = true;
+		if (!PlayState.instance.startingSong) FunkinSound.playOnce(Paths.sound('perfectRewind'));
+	}
+
+	public override function onCountdownStart(event)
+	{
+		if (value)
+		{
+			PlayState.instance.scoreText.color = 0xFFFDF62B;
+			PlayState.instance.scoreText.borderColor = 0xFFFA501C;
+			PlayState.instance.scoreText.borderSize = 2;
+		}
+	}
+}

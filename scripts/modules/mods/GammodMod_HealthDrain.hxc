@@ -1,0 +1,88 @@
+import funkin.modding.module.Module;
+import funkin.modding.module.ModuleHandler;
+import funkin.play.PlayState;
+import flixel.math.FlxMath;
+import funkin.Conductor;
+import funkin.util.Constants;
+import flixel.FlxSprite;
+import Math;
+
+class GammodMod_HealthDrain extends Module
+{
+	var display_name: String = 'Health Drain';
+	var type: String = 'Switch';
+	var default_value: Bool = false;
+	var value: Bool;
+	var color: Int = 0xFFff1100;
+	var hidden: Bool = false;
+	var multiplier: Float = 0.2;
+
+	var colorReference: FlxSprite;
+	var colorReferenceLeft: FlxSprite;
+
+	var pulseColor: Int = Constants.COLOR_HEALTH_BAR_RED;
+	var pulseHardColor: Int = 0xFF900000;
+
+	public function new()
+	{
+		super('GammodMod_HealthDrain');
+
+		value = default_value;
+		state = PlayState;
+
+		colorReference = new FlxSprite();
+		colorReference.color = Constants.COLOR_HEALTH_BAR_GREEN;
+		colorReferenceLeft = new FlxSprite();
+		colorReferenceLeft.color = Constants.COLOR_HEALTH_BAR_RED;
+	}
+
+	public function onNoteHit(event) 
+	{
+		if (!event.note.noteData.getMustHitNote() && value)
+		{
+			if ((PlayState.instance.health - Constants.HEALTH_SICK_BONUS) > 0.0)
+			{
+				PlayState.instance.health -= Constants.HEALTH_SICK_BONUS;
+				ModuleHandler.getModule('GammodPlayModule').rightHealthBarColor.color = pulseColor;
+				ModuleHandler.getModule('FukkitTweenManager').cancel('pulse_healthBarRight');
+				ModuleHandler.getModule('FukkitTweenManager').color(
+					'pulse_healthBarRight',
+					ModuleHandler.getModule('GammodPlayModule').rightHealthBarColor,
+					ModuleHandler.getModule('GammodPlayModule').rightHealthBarColorFinal,
+					0.3,
+					0,
+					'circIn'
+				);
+			}
+			else
+			{
+				PlayState.instance.health = 0.01;
+				ModuleHandler.getModule('GammodPlayModule').leftHealthBarColor.color = pulseHardColor;
+				ModuleHandler.getModule('FukkitTweenManager').cancel('pulse_healthBarLeft');
+				ModuleHandler.getModule('FukkitTweenManager').color(
+					'pulse_healthBarLeft',
+					ModuleHandler.getModule('GammodPlayModule').leftHealthBarColor,
+					ModuleHandler.getModule('GammodPlayModule').leftHealthBarColorFinal,
+					0.3,
+					0,
+					'circIn'
+				);
+			}
+		}
+	}
+
+	override public function onUpdate(event)
+	{
+		if (value)
+		{
+			for (holdNote in PlayState.instance.opponentStrumline.holdNotes.members)
+			{
+				if (holdNote == null || !holdNote.alive) continue;
+				if (holdNote.hitNote && !holdNote.missedNote && holdNote.sustainLength > 0 && (PlayState.instance.health - Constants.HEALTH_HOLD_BONUS_PER_SECOND > 0.0))
+				{
+					PlayState.instance.health -= Constants.HEALTH_HOLD_BONUS_PER_SECOND * event.elapsed;
+				}
+			}
+		}
+	}
+}

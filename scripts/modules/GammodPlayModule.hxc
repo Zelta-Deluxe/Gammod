@@ -1,0 +1,34 @@
+import funkin.modding.module.Module;
+import funkin.util.Constants;
+import funkin.play.PlayState;
+import flixel.FlxSprite;
+import flixel.util.FlxColor;
+
+class GammodPlayModule extends Module
+{
+	var leftHealthBarColor: FlxSprite;
+	var rightHealthBarColor: FlxSprite;
+
+	var leftHealthBarColorFinal: FlxColor = Constants.COLOR_HEALTH_BAR_RED;
+	var rightHealthBarColorFinal: FlxColor = Constants.COLOR_HEALTH_BAR_GREEN;
+
+	public function new()
+	{
+		super('GammodPlayModule');
+
+		state = PlayState;
+
+		leftHealthBarColor = new FlxSprite();
+		leftHealthBarColor.color = Constants.COLOR_HEALTH_BAR_RED;
+		rightHealthBarColor = new FlxSprite();
+		rightHealthBarColor.color = Constants.COLOR_HEALTH_BAR_GREEN;
+	}
+
+	override public function onUpdate(event)
+	{
+		if (PlayState.instance == null) return;
+
+		PlayState.instance.healthBar.createFilledBar(leftHealthBarColor.color, rightHealthBarColor.color);
+		PlayState.instance.healthBar.updateFilledBar();
+	}
+}

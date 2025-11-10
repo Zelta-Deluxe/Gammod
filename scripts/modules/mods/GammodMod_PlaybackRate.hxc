@@ -1,0 +1,53 @@
+import funkin.modding.module.Module;
+import funkin.play.PlayState;
+import funkin.util.Constants;
+import flixel.math.FlxMath;
+import funkin.ui.freeplay.FreeplayState;
+import flixel.FlxG;
+
+class GammodMod_PlaybackRate extends Module
+{
+	var display_name: String = 'Playback Rate';
+	var type: String = 'FloatRange'; // Boolean value, true or false.
+	var default_value: Array<Float> = [1.0, 0.1, 0.5, 2.0]; // DEFAULT VALUE, STEP VALUE, MIN VALUE, MAX VALUE
+	var value: Float;
+	var color: Int = 0xffd400ff;
+	var hidden: Bool = false;
+	var multiplier: Float = 0.1;
+
+	public function new()
+	{
+		super('GammodMod_PlaybackRate');
+
+		value = default_value[0];
+		state = PlayState;
+	}
+
+	function onCountdownStart(event) 
+	{
+		super.onCountdownStart(event);
+		if (FlxMath.inBounds(value,default_value[2],default_value[3]))
+		{
+			PlayState.instance.playbackRate = value;
+			PlayState.instance.playerStrumline.scrollSpeed = PlayState.instance.currentChart.scrollSpeed / PlayState.instance.playbackRate;
+			PlayState.instance.opponentStrumline.scrollSpeed = PlayState.instance.currentChart.scrollSpeed / PlayState.instance.playbackRate;
+		}
+	}
+
+	function onSongEvent(event)
+	{
+		switch (event.eventData.eventKind)
+		{
+			case 'ScrollSpeed':
+				event.eventData.value.duration = event.eventData.value.duration / PlayState.instance.playbackRate;
+				event.eventData.value.scroll = event.eventData.value.scroll / PlayState.instance.playbackRate;
+			case 'FocusCamera':
+				if (event.eventData.value.duration != null)
+				{
+					event.eventData.value.duration = event.eventData.value.duration / PlayState.instance.playbackRate;
+				}
+			case 'ZoomCamera':
+				event.eventData.value.duration = event.eventData.value.duration / PlayState.instance.playbackRate;
+		}
+	}
+}
