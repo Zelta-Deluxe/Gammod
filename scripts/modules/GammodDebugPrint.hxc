@@ -1,0 +1,116 @@
+package gammod.util;
+
+import funkin.modding.module.ModuleHandler;
+import funkin.modding.module.Module;
+import flixel.FlxCamera;
+import funkin.play.PlayState;
+import flixel.text.FlxText;
+import flixel.text.FlxTextBorderStyle;
+import flixel.FlxG;
+import flixel.group.FlxTypedSpriteGroup;
+import flixel.util.FlxColor;
+import gammod.util.GammodTweenManager as Tweens;
+
+/*
+ * Vague recreation of Psych Engine's debug prints.
+ * Not usable it crashes if you get out of a song and I'm lazy to fix ts.
+ */
+class GammodDebugPrint extends Module
+{
+	var camDebugPrint: FlxCamera;
+	var printsGroup: FlxTypedSpriteGroup = new FlxTypedSpriteGroup();
+	var activePrints: Array<FlxText> = [];
+	var printLog: Array<String> = [];
+
+	function new()
+	{
+		super('GammodDebugPrint');
+
+		state = PlayState;
+	}
+
+	public function onStateChangeEnd(event:ScriptEvent) 
+	{
+		if (!event.targetState is PlayState)
+		{
+			trace("We're exiting PlayState. Clearing all debugPrint() stuff.");
+			for (print in activePrints)
+			{
+				if (print == null) continue;
+				Tweens.cancel('FukkitDebugPrint_fadeOut_debugPrint' + print.ID);
+				printsGroup.remove(print);
+				print.destroy();
+			}
+			return;
+		}
+		PlayState.instance.add(printsGroup);
+		camDebugPrint = new FlxCamera();
+		camDebugPrint.bgColor = 0x00000000;
+		FlxG.cameras.add(camDebugPrint, false);
+
+		printsGroup.cameras = [camDebugPrint];
+	}
+
+	public function debugPrint(?content: String, size = 15, color = 0xFFFFFFFF, show_index: Bool = false)
+	{
+		if (content == null) content = 'Debug print number ' + (printLog.length + 1);
+
+		var newPrint: FlxText = new FlxText(0,0, 0, (show_index ? '[' + (printLog.length + 1) + ']: ' : '') + content, size, false);
+		newPrint.color = color;
+		newPrint.setBorderStyle(FlxTextBorderStyle.OUTLINE, FlxColor.getInverted(newPrint.color), 2, 4);
+		printsGroup.insert(0, newPrint);
+
+		Tweens.cancel('FukkitDebugPrint_fadeOut_debugPrint' + newPrint.ID);
+		Tweens.tween
+		(
+			'FukkitDebugPrint_fadeOut_debugPrint' + newPrint.ID,
+			newPrint,
+			{ alpha: 0 },
+			1,
+			5,
+			'linear',
+			'oneshot',
+			()->
+			{
+				printsGroup.remove(newPrint);
+				newPrint.destroy();
+			}
+		);
+
+		updatePrintPositions();
+
+		printLog.push(content);
+	}
+
+	function clearPrints()
+	{
+		printsGroup.forEach
+		(
+			(member) ->
+			{
+				member.destroy();
+			}
+		);
+	}
+
+	function clearLog()
+	{
+		printLog = [];
+	}
+
+	function updatePrintPositions()
+	{
+		var index: Int = 0;
+		printsGroup.forEach
+		(
+			(member) ->
+			{
+				var previousMember = printsGroup.members[(index == 0 ? 0 : index-1)];
+				member.y = (previousMember.y + previousMember.height + 4);
+				if (index == 0) member.y = 10;
+				member.x = 10;
+				index += 1;
+			}
+		);
+	}
+}

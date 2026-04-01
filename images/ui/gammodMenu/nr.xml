@@ -1,0 +1,6 @@
+<?xml version='1.0' encoding='utf-8'?>
+<TextureAtlas imagePath="nr.png">
+<SubTexture name="nr idle0000" x="0" y="0" width="295" height="134" frameX="-5" frameY="0" frameWidth="305" frameHeight="134" />
+<SubTexture name="nr bump0000" x="0" y="134" width="288" height="134" frameX="-9" frameY="0" frameWidth="305" frameHeight="134" />
+<SubTexture name="nr bump0001" x="295" y="0" width="286" height="132" frameX="-10" frameY="-2" frameWidth="305" frameHeight="134" />
+</TextureAtlas>

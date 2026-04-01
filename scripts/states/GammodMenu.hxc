@@ -1,5 +1,8 @@
+package gammod.ui;
+
 import funkin.ui.MusicBeatState;
 import funkin.ui.MusicBeatSubState;
+import funkin.ui.ScriptedMusicBeatSubState;
 import funkin.modding.module.ModuleHandler;
 import funkin.graphics.FunkinSprite;
 import flixel.FlxSprite;
@@ -20,18 +23,41 @@ import funkin.ui.freeplay.FreeplayScore;
 import flixel.text.FlxTextBorderStyle;
 import funkin.audio.FunkinSound;
 import flixel.tweens.FlxTween;
+import flixel.tweens.FlxEase;
 import flixel.util.FlxTimer;
+import flixel.math.FlxRect;
+import flixel.FlxCamera;
+import funkin.graphics.FunkinCamera;
+import funkin.util.SwipeUtil;
+import flixel.FlxObject;
+import funkin.util.TouchUtil;
+import funkin.util.HapticUtil;
+import funkin.Preferences;
+import funkin.util.PlatformUtil;
+import funkin.util.HostPlatform;
+import funkin.save.Save;
+import flixel.math.FlxRandom;
+import flixel.addons.display.FlxRuntimeShader;
+import haxe.ds.StringMap;
+import funkin.graphics.shaders.GaussianBlurShader;
+import gammod.modifiers.GammodModType;
+import gammod.modifiers.GammodPlatform;
+import gammod.shaders.LiquidBackgroundShader;
+import gammod.shaders.PixelSorting;
+import gammod.shaders.GlitchShake;
+import gammod.modifiers.highscore.GammodMult;
+import openfl.Lib;
+import funkin.ui.FullScreenScaleMode;
+import gammod.util.GammodTweenManager as Tweens;
+import gammod.ui.ModifiersMenuPlayers;
+import flixel.addons.display.FlxBackdrop;
+import funkin.graphics.shaders.AdjustColorShader;
+import Reflect;
 import Int;
+import Math;
 import Float;
 
-/*
-TODO:
-
-	- When you see a highscore in freeplay, the used mods for the score should show up
-	- When you're in freeplay, currently active mods should show up too plus the active multiplier amount
-		(prolly in the lower right part, necst to the album)
-	- When you're in the results screen, necst to your score, the used mods and their mult sum should be shown too
-*/
+using Lambda; //What does this do actually? I put it long ago but can't remember why.
 
 class GammodModButton extends FlxTypedSpriteGroup
 {
@@ -41,11 +67,19 @@ class GammodModButton extends FlxTypedSpriteGroup
 	var buttonBackground: FunkinSprite;
 	var defaultSticker: FunkinSprite;
 	var soundTimer: FlxTimer;
+	var defaultIcon: FunkinSprite;
+
+	var glitchShakeEffect: GlitchShake;
 
 	var spacing: Vector2 = new Vector2(20,20);
 	var assigned_mod: Module;
 	var selected: Bool = false;
 	var currently_default: Bool = true;
+	var currently_unranked: Bool = false;
+	var defaultIcon_scale:Float = 0.13;
+
+	var original_width: Int; // My mistake, original gangster!
+	var original_height: Int;
 
 	public function new(mod:Module)
 	{
@@ -59,36 +93,47 @@ class GammodModButton extends FlxTypedSpriteGroup
 			}
 		).join().toUpperCase();
 
+		glitchShakeEffect = new GlitchShake();
+		glitchShakeEffect.update(1, 1.2);
+
 		initialsTxt = new CapsuleText(0, 0, initials, 50);
 		initialsTxt.set_clipWidth(255);
-		initialsTxt.glowColor = mod.color;
-		initialsTxt.blurredText.color = mod.color;
-    		initialsTxt.whiteText.textField.filters = [new GlowFilter(mod.color, 1, 5, 5, 210, 2)];
+		initialsTxt.glowColor = mod.colors[0];
+		initialsTxt.blurredText.color = mod.colors[0];
+    		initialsTxt.whiteText.textField.filters = [new GlowFilter(mod.colors[0], 1, 5, 5, 210, 2)];
 		this.add(initialsTxt);
 
 		buttonBackground = new FunkinSprite(0,0).loadGraphic(Paths.image('ui/gammodMenu/buttonOverlay'));
 		buttonBackground.offset.set(buttonBackground.width, 0);
-		buttonBackground.x = 5;
+		buttonBackground.x = -20;
 		buttonBackground.y += 10;
 		this.add(buttonBackground);
 
 		icon = new FunkinSprite(spacing.x,spacing.y);
-		if (Assets.exists('ui/gammodMenu/icons/' + mod.moduleId.substr('GammodMod_'.length, mod.moduleId.length))) 
+		if (Assets.exists(Paths.image('ui/gammodMenu/icons/' + mod.moduleId))) 
 		{
-			icon.loadGraphic('ui/gammodMenu/icons/' + mod.moduleId.substr('GammodMod_'.length, mod.moduleId.length));
+			icon.loadGraphic(Paths.image('ui/gammodMenu/icons/' + mod.moduleId));
 		}
 		else
 		{
-			icon.loadGraphic(Paths.image('ui/gammodMenu/icons/Example'));
+			icon.loadGraphic(Paths.image('ui/gammodMenu/icons/Default'));
 		}
+		original_width = icon.width;
+		original_height = icon.height;
 		icon.antialiasing = false;
 		icon.origin.set(0,0);
-		icon.scale.set(2,2);
+		icon.scale.set((76/icon.width), (76/icon.height));
 		icon.origin.set(icon.width / 2, icon.height / 2);
 		icon.updateHitbox();
+		icon.shader = glitchShakeEffect;
 		this.add(icon);
 
-		defaultIcon = new FunkinSprite(0,0).loadGraphic(Paths.image('ui/gammodMenu/modNotDefaultIcon'));
+		defaultIcon = new FunkinSprite(0,0);
+		defaultIcon.frames = Paths.getSparrowAtlas('ui/gammodMenu/onStickerIcon');
+		defaultIcon.animation.addByPrefix('on', 'onStickerIcon on', 15, true);
+		defaultIcon.animation.addByPrefix('nr', 'onStickerIcon unranked', 15, true);
+		defaultIcon.animation.addByPrefix('mult', 'onStickerIcon mult', 15, true);
+		defaultIcon.animation.play('on', true);
 		defaultIcon.antialiasing = true;
 		defaultIcon.origin.set(0,0);
 		defaultIcon.scale.set(0.2,0.2);
@@ -103,17 +148,22 @@ class GammodModButton extends FlxTypedSpriteGroup
 		screenTxt = new CapsuleText(icon.x + icon.width + spacing.x,icon.y, mod.display_name, 50);
 		screenTxt.set_clipWidth(0); // REMAINING TO DO SOME MATH TO CLIP EVERYTHING CORRECTLY SO IF SOMEONE DOES A REALLY LONG NAME IT DOESN'T FUCK UP!!
 		screenTxt.y = (icon.y + (icon.height - screenTxt.height) / 2);
-		screenTxt.glowColor = mod.color;
+		screenTxt.glowColor = mod.colors[0];
 		screenTxt.blurredText.color = screenTxt.glowColor;
     		screenTxt.whiteText.textField.filters = [new GlowFilter(screenTxt.glowColor, 1, 5, 5, 210, 2)];
 		this.add(screenTxt);
 
-		defaultSticker = new FunkinSprite(0,0).loadGraphic(Paths.image('ui/gammodMenu/modNotDefault'));
+		defaultSticker = new FunkinSprite(0,0);
+		defaultSticker.frames = Paths.getSparrowAtlas('ui/gammodMenu/onSticker');
+		defaultSticker.animation.addByPrefix('on', 'onSticker on', 15, true);
+		defaultSticker.animation.addByPrefix('nr', 'onSticker unranked', 15, true);
+		defaultSticker.animation.addByPrefix('mult', 'onSticker mult', 15, true);
+		defaultSticker.animation.play('on', true);
 		defaultSticker.scale.set(0,0);
 		defaultSticker.updateHitbox();
-		defaultSticker.scale.set(0.18,0.18);
+		defaultSticker.scale.set(defaultIcon_scale, defaultIcon_scale);
 		defaultSticker.x = 250;
-		defaultSticker.y += 60;
+		defaultSticker.y += 57;
 		defaultSticker.alpha = 0;
 		this.add(defaultSticker);
 
@@ -122,35 +172,68 @@ class GammodModButton extends FlxTypedSpriteGroup
 		this.height = icon.height + (spacing * 2);
 	}
 
-	public function update()
+	public function update(elapsed:Float)
 	{
 		defaultIcon.x = icon.x;
 		screenTxt.set_clipWidth(FlxMath.bound(-(screenTxt.x - buttonBackground.x), 0, null));
+
+		if (!selected)
+		{
+			glitchShakeEffect.update(elapsed);
+			glitchShakeEffect.set_shakeRate(0.2);
+			glitchShakeEffect.set_colorRate(0);
+			initialsTxt.alpha = FlxG.random.float(0.05,0.75);
+		}
+		else
+		{
+			glitchShakeEffect.set_shakeRate(0);
+			glitchShakeEffect.set_colorRate(0);
+			initialsTxt.alpha = 1;
+		}
 	}
 
 	public function updateDefault()
 	{
-		final is_default:Bool = ModuleHandler.getModule('GammodModHandler').checkDefault(assigned_mod);
-		if (is_default && (!currently_default))
+		final is_default:Bool = ModuleHandler.getModule('GammodModifierHandler').checkDefault(assigned_mod);
+		final is_unranked = (GammodMult.getMult(assigned_mod) == null);
+		if (is_default && !currently_default)
 		{
 			removeOn();
 		}
-		else if (!is_default && (currently_default))
+		else if ((!is_default && currently_default) || ((is_unranked != currently_unranked) && !is_default))
 		{
-			appendOn();
+			appendOn(false, is_unranked);
 		}
 	}
 
-	public function appendOn()
+	public function appendOn(block_input: Bool = false, unranked: Bool = false)
 	{
 		trace('APPLYING STICKER');
+		trace('IT IS INDEED, ' + (unranked ? 'UNRANKED' : 'RANKED'));
+		if (ModuleHandler.getModule('GammodStateHandler').gammodMenu != null && block_input)
+		{
+			ModuleHandler.getModule('GammodStateHandler').gammodMenu.allow_input = false;
+			new FlxTimer().start
+			(
+				0.25, 
+				()->
+				{ 
+					if (!ModuleHandler.getModule('GammodStateHandler').gammodMenu.transitioningOut) ModuleHandler.getModule('GammodStateHandler').gammodMenu.allow_input = true;
+				}
+			);
+		}
 		currently_default = false;
+		currently_unranked = unranked;
+		defaultIcon.angle = 0;
 		defaultSticker.angle = 65;
-		defaultSticker.x = (icon.x + icon.width + screenTxt.width + (spacing.x * 6)) - 58;
-		defaultSticker.y = buttonBackground.y + 50;
+		var anim: String = unranked ? 'nr' : (GammodMult.getMult(assigned_mod) != 0.0 ? 'mult' : 'on');
+		defaultSticker.animation.play(anim, true);
+		defaultIcon.animation.play(anim, true);
+		defaultSticker.x = (icon.x + icon.width + screenTxt.width + (spacing.x * 6)) - 35;
+		defaultSticker.y = buttonBackground.y + 47;
 		defaultSticker.scale.set(0.5, 0.5);
-		ModuleHandler.getModule('FukkitTweenManager').cancel('popIn_sticker' + this.ID);
-		ModuleHandler.getModule('FukkitTweenManager').tween(
+		Tweens.cancel('popIn_sticker' + this.ID);
+		Tweens.tween(
 			'popIn_sticker' + this.ID,
 			defaultSticker,
 			{ angle: 0 },
@@ -158,19 +241,19 @@ class GammodModButton extends FlxTypedSpriteGroup
 			0,
 			'quadIn'
 		);
-		ModuleHandler.getModule('FukkitTweenManager').cancel('scaleIn_sticker' + this.ID);
-		ModuleHandler.getModule('FukkitTweenManager').tween(
+		Tweens.cancel('scaleIn_sticker' + this.ID);
+		Tweens.tween(
 			'scaleIn_sticker' + this.ID,
 			defaultSticker.scale,
-			{ x: 0.18, y: 0.18 },
+			{ x: defaultIcon_scale, y: defaultIcon_scale },
 			0.25,
 			0,
 			'circIn'
 		);
 		if (selected)
 		{
-			ModuleHandler.getModule('FukkitTweenManager').cancel('fadeIn_sticker' + this.ID);
-			ModuleHandler.getModule('FukkitTweenManager').tween(
+			Tweens.cancel('fadeIn_sticker' + this.ID);
+			Tweens.tween(
 				'fadeIn_sticker' + this.ID,
 				defaultSticker,
 				{ alpha: 1 },
@@ -189,8 +272,8 @@ class GammodModButton extends FlxTypedSpriteGroup
 		} 
 		else
 		{
-			ModuleHandler.getModule('FukkitTweenManager').cancel('fade_onIcon' + this.ID);
-			ModuleHandler.getModule('FukkitTweenManager').tween(
+			Tweens.cancel('fade_onIcon' + this.ID);
+			Tweens.tween(
 				'fade_onIcon' + this.ID,
 				defaultIcon,
 				{ alpha: 1 },
@@ -201,19 +284,41 @@ class GammodModButton extends FlxTypedSpriteGroup
 		}
 	}
 
-	public function removeOn()
+	public function removeOn(block_input: Bool = false)
 	{
 		trace('HIDING STICKER');
+		if (ModuleHandler.getModule('GammodStateHandler').gammodMenu != null && block_input)
+		{
+			ModuleHandler.getModule('GammodStateHandler').gammodMenu.allow_input = false;
+			new FlxTimer().start
+			(
+				0.12, 
+				()->
+				{ 
+					if (!ModuleHandler.getModule('GammodStateHandler').gammodMenu.transitioningOut) ModuleHandler.getModule('GammodStateHandler').gammodMenu.allow_input = true;
+				}
+			);
+		}
 		currently_default = true;
 		defaultIcon.angle = 5;
 		defaultSticker.angle = 5;
 		defaultSticker.y = buttonBackground.y + 40;
-		ModuleHandler.getModule('FukkitTweenManager').cancel('popIn_sticker' + this.ID);
-		ModuleHandler.getModule('FukkitTweenManager').cancel('fadeIn_sticker' + this.ID);
-		ModuleHandler.getModule('FukkitTweenManager').tween(
+		Tweens.cancel('popIn_sticker' + this.ID);
+		Tweens.cancel('fadeIn_sticker' + this.ID);
+		Tweens.tween(
 			'popOut_sticker' + this.ID,
 			defaultSticker,
 			{ y: defaultSticker.y + 10, alpha: 0 },
+			0.12,
+			0,
+			'quadIn'
+		);
+		Tweens.cancel('fade_onIcon' + this.ID);
+		Tweens.cancel('popOut_deafultIcon' + this.ID);
+		Tweens.tween(
+			'popOut_deafultIcon' + this.ID,
+			defaultIcon,
+			{ alpha: 0 },
 			0.12,
 			0,
 			'quadIn'
@@ -227,7 +332,7 @@ class GammodModButton extends FlxTypedSpriteGroup
 
 	public function popOut()
 	{
-		ModuleHandler.getModule('FukkitTweenManager').tween(
+		Tweens.tween(
 			'popOut_overlay' + this.ID,
 			this.scale,
 			{ y: 0, x: 5 },
@@ -235,7 +340,7 @@ class GammodModButton extends FlxTypedSpriteGroup
 			0,
 			'circOut'
 		);
-		ModuleHandler.getModule('FukkitTweenManager').tween(
+		Tweens.tween(
 			'popOut_overlayText' + this.ID,
 			this.screenTxt,
 			{ x: -(this.screenTxt.width + 50) },
@@ -243,7 +348,7 @@ class GammodModButton extends FlxTypedSpriteGroup
 			0,
 			'circOut'
 		);
-		ModuleHandler.getModule('FukkitTweenManager').tween(
+		Tweens.tween(
 			'popOut_overlayTextPreview' + this.ID,
 			this.initialsTxt,
 			{ x: -(this.initialsTxt.width + 50) },
@@ -251,38 +356,30 @@ class GammodModButton extends FlxTypedSpriteGroup
 			0,
 			'circOut'
 		);
-
-		new FlxTimer().start
-		(
-			0.12, 
-			()->
-			{
-				//PLAY SOUND
-			}
-		);
 	}
 
 	public function pullUpOverlay()
 	{
+		if (selected) return;
 		selected = true;
 		buttonBackground.x = 0;
 
-		defaultSticker.y = buttonBackground.y + 50; //REALLY FUCKED UP PATCH, I HAVE TO FIX THIS FROM THE ROOT
+		defaultSticker.y = buttonBackground.y + 47; //REALLY FUCKED UP PATCH, I HAVE TO FIX THIS FROM THE ROOT
 		
-		ModuleHandler.getModule('FukkitTweenManager').cancel('move_overlay' + this.ID);
-		ModuleHandler.getModule('FukkitTweenManager').tween(
+		Tweens.cancel('move_overlay' + this.ID);
+		Tweens.tween(
 			'move_overlay' + this.ID,
 			buttonBackground,
-			{ x: icon.x + icon.width + screenTxt.width + (spacing.x * 6) },
+			{ x: (icon.x + icon.width + screenTxt.width + (spacing.x * 6)) + 66 },
 			0.2,
 			0,
 			'circOut'
 		);
-		ModuleHandler.getModule('FukkitTweenManager').cancel('scale_overlay' + this.ID);
-		ModuleHandler.getModule('FukkitTweenManager').tween(
+		Tweens.cancel('scale_overlay' + this.ID);
+		Tweens.tween(
 			'scale_overlay' + this.ID,
 			icon.scale,
-			{ x: 1.7, y: 1.7 },
+			{ x: (76/original_width) - (0.1 * (icon.width/original_width)), y: (76/original_height) - (0.1 * (icon.height/original_height)) },
 			0.2,
 			0,
 			'circOut'
@@ -291,17 +388,17 @@ class GammodModButton extends FlxTypedSpriteGroup
 		if (!currently_default)
 		{
 			defaultSticker.x = (icon.x + icon.width + screenTxt.width + (spacing.x * 6)) - 300;
-			ModuleHandler.getModule('FukkitTweenManager').cancel('move_sticker' + this.ID);
-			ModuleHandler.getModule('FukkitTweenManager').tween(
+			Tweens.cancel('move_sticker' + this.ID);
+			Tweens.tween(
 				'move_sticker' + this.ID,
 				defaultSticker,
-				{ x: (icon.x + icon.width + screenTxt.width + (spacing.x * 6)) - 10, angle: 360, alpha: 1 },
+				{ x: (icon.x + icon.width + screenTxt.width + (spacing.x * 6)) + 13, angle: 360, alpha: 1 },
 				0.2,
 				0,
 				'circOut'
 			);
-			ModuleHandler.getModule('FukkitTweenManager').cancel('fade_onIcon' + this.ID);
-			ModuleHandler.getModule('FukkitTweenManager').tween(
+			Tweens.cancel('fade_onIcon' + this.ID);
+			Tweens.tween(
 				'fade_onIcon' + this.ID,
 				defaultIcon,
 				{ alpha: 0 },
@@ -314,22 +411,23 @@ class GammodModButton extends FlxTypedSpriteGroup
 
 	public function pullDownOverlay()
 	{
+		if (!selected) return;
 		selected = false;
 		buttonBackground.x = icon.x + icon.width + screenTxt.width + (spacing.x * 4);
-		ModuleHandler.getModule('FukkitTweenManager').cancel('move_overlay' + this.ID);
-		ModuleHandler.getModule('FukkitTweenManager').tween(
+		Tweens.cancel('move_overlay' + this.ID);
+		Tweens.tween(
 			'move_overlay' + this.ID,
 			buttonBackground,
-			{ x: 28 },
+			{ x: 0 },
 			0.2,
 			0,
 			'circOut'
 		);
-		ModuleHandler.getModule('FukkitTweenManager').cancel('scale_overlay' + this.ID);
-		ModuleHandler.getModule('FukkitTweenManager').tween(
+		Tweens.cancel('scale_overlay' + this.ID);
+		Tweens.tween(
 			'scale_overlay' + this.ID,
 			icon.scale,
-			{ x: 2, y: 2},
+			{ x: (76/original_width), y: (76/original_height) },
 			0.2,
 			0,
 			'circOut'
@@ -337,8 +435,8 @@ class GammodModButton extends FlxTypedSpriteGroup
 
 		if (!currently_default)
 		{
-			ModuleHandler.getModule('FukkitTweenManager').cancel('move_sticker' + this.ID);
-			ModuleHandler.getModule('FukkitTweenManager').tween(
+			Tweens.cancel('move_sticker' + this.ID);
+			Tweens.tween(
 				'move_sticker' + this.ID,
 				defaultSticker,
 				{ x: (icon.x + icon.width + screenTxt.width + (spacing.x * 6)) - 300, angle: 0, alpha: 0 },
@@ -346,8 +444,8 @@ class GammodModButton extends FlxTypedSpriteGroup
 				0,
 				'circOut'
 			);
-			ModuleHandler.getModule('FukkitTweenManager').cancel('fade_onIcon' + this.ID);
-			ModuleHandler.getModule('FukkitTweenManager').tween(
+			Tweens.cancel('fade_onIcon' + this.ID);
+			Tweens.tween(
 				'fade_onIcon' + this.ID,
 				defaultIcon,
 				{ alpha: 1 },
@@ -364,20 +462,140 @@ class GammodModButton extends FlxTypedSpriteGroup
 	}
 }
 
-class GammodMenu extends MusicBeatSubState
+class GammodSelectorArrow extends FlxTypedSpriteGroup
 {
-	var controls: Controls = PlayerSettings.player1.controls;
+	var offTexture: FunkinSprite;
+	var onTexture: FunkinSprite;
+
+	var left: Bool;
+
+	var glitchTimer: FlxTimer;
+
+	var previous_pressed: Bool;
+
+	public function new(_left: Bool)
+	{
+		super();
+		
+		left = _left;
+	}
+
+	public function init(_x: Int, _y: Int): GammodSelectorArrow
+	{
+		offTexture = new FunkinSprite(0,0).loadGraphic(Paths.image('ui/gammodMenu/optionsScreen_arrowOff'));
+		offTexture.shader = new GlitchShake(null, true);
+		onTexture = new FunkinSprite(0,0).loadGraphic(Paths.image('ui/gammodMenu/optionsScreen_arrowOn'));
+		onTexture.alpha = 0;
+		onTexture.shader = new GlitchShake(null, true);
+
+		offTexture.shader.set_shakeRate(10);
+		onTexture.shader.set_shakeRate(10);
+
+		color = 0xFF66FFFF;
+
+		this.add(offTexture);
+		this.add(onTexture);
+
+		if (!left)
+		{
+			this.flipX = true;
+		}
+
+		x = _x;
+		y = _y;
+
+		setColor(0xFF66FFFF);
+
+		return this;
+	}
+
+	public function setColor(value:Int)
+	{
+		offTexture.shader.set_color(value);
+		onTexture.shader.set_color(value);
+	}
+
+	public function update(pressed: Bool, ?elapsed:Float = 0)
+	{
+		onTexture.alpha = pressed ? 1 : 0;
+		offTexture.shader.update(elapsed);
+		onTexture.shader.update(elapsed);
+	}
+}
+
+class GammodMenu extends ScriptedMusicBeatSubState
+{
+	//var controls: Controls = PlayerSettings.player1.controls;
 	var buttons: Array<GammodModButton> = [];
+	var buttonsCam: FunkinCamera; 
 	var buttonGroup: FlxTypedSpriteGroup;
-	var optionTxt: FlxText;
-	var multiplierNum: FlxText;
 	var freeplayScoreTxt: FreeplayScore;
-	var overlayBackground: FunkinSprite;
+	var bg: FunkinSprite;
 	var selectedArrow: FlxTypedSpriteGroup;
-	var arrowGlow: FunkinSprite;
 	var topBand: FunkinSprite;
 	var bottomBand: FunkinSprite;
 	var sideBar: FunkinSprite;
+
+	//--SHADER STUFF
+	var extraSpeed:Float = 1;
+	var extraSpeedPeak:Float = 10;
+	var extraSpeedChange:FlxTween;
+	var introProgress:Float = 0;
+	var introProgressChange:FlxTween;
+
+	// THINGS FOR THE MULTIPLIERS SCREEN THONG (what)!!!
+	var multiplierNum: FlxText;
+	var multiplierNumGlow:FlxText;
+	var multScreen: FunkinSprite;
+
+	// THINGS FOR THE OPTIONS SCREEN THING!!!
+	var optionsScreen: FunkinSprite;
+	var optionTxt: FlxText;
+	var tipTxt: FlxText;
+
+	var optionsLights: FlxTypedSpriteGroup;
+	var lightsOff: FunkinSprite;
+	var lightsOn: FunkinSprite;
+	var lightsTimer: FlxTimer;
+
+	var leftSelectorArrow: GammodSelectorArrow;
+	var rightSelectorArrow: GammodSelectorArrow;
+
+	var disableModsOff: FunkinSprite;
+	var disableModsOn: FunkinSprite;
+	var disableModsProgress: FlxTween;
+	var focusTint: FunkinSprite;
+	var focusSound: FunkinSound;
+
+	var textAnimator: FlxTween;
+	var borderColor: FlxSprite;
+
+	var modifiersHitboxLeft: FlxSprite;
+	var modifiersHitboxDown: FlxSprite;
+	var optionsSliderHitbox: FlxSprite;
+	var leftArrowHitbox: FlxSprite;
+	var rightArrowHitbox: FlxSprite;
+	var resetModsHitbox: FlxSprite;
+
+	var descBorder: FlxSprite;
+
+	var funTxt: FlxText;
+
+	var slideLapTimer: FlxTimer;
+
+	var doubleClickTimer: FlxTimer;
+	var holdTimer: FlxTimer;
+	var holdingLoop: FlxTimer;
+	var textWriteTimer: FlxTimer;
+	var unrankedBumpTimer: FlxTimer;
+
+	// New camera that stores all the stuff for the top screen (mainly to do a zoom effect later on and move it as a whole sprite)
+	var screenCam: FunkinCamera;
+
+	var renderSound: FunkinSound;
+	var renderSound_step: Int = 1;
+
+	var hitbox_amplitude: Int = 30;
 
 	var selected_offset: Int = 50;
 	var deselected_position: Int = 0;
@@ -387,10 +605,84 @@ class GammodMenu extends MusicBeatSubState
 	var arrow_counter: Float = 0;
 	var arrow_hover: Bool = false;
 
+	var optionsTxt_center: Int = 850;
+
+	var text_hoffset: Int = 120;
+
 	var selected_button: Int;
 	var allow_input: Bool = false;
+	var transitioningOut: Bool = false;
+	var transitioningIn: Bool = true;
+
+	var screen_elemets_offset: Int = 80;
+	var scale_options_multiplier: Float = 1.0;
 
 	var appear_delay = 0.3;
+
+	var slide_speed = 6;
+
+	/*
+	 * Automatically set to true when you hold!
+	 * Must be consumed when used (so you set it back to false, plaese..)
+	 */
+	var justHeld:Bool = false;
+
+	var rendering_animation: Bool = false;
+
+	var can_write_desc: Bool = false;
+	var writing_animation: Bool = false;
+
+	var desc_progress: Int = 1;
+	var desc_content: String = '';
+
+	var text_tint:Int = 0xFF666666;
+	var introduced_mods_text: FlxText;
+	var introduced_play_text: FlxText;
+	var visible_mods_text: FlxText;
+	var visible_play_text: FlxText;
+
+	var scoreWontSave: FunkinSprite;
+
+	var shaderTimer: FlxTimer;
+
+	var can_exit: Bool = false;
+
+	var show_tip:Bool = false;
+
+	var showing_unranked: Bool = false;
+	var showing_unranked_sign: Bool = false;
+	var unrankedTimer: FlxTimer;
+	var unranked_text: Bool = false;
+	var previous_unranked: Bool;
+
+	var intended_option_color: Int = 0xFF66ffff;
+
+	var needs_unranked:Bool = false;
+
+	var rightFirst:Bool = false;
+	var downFirst:Bool = false;
+
+	var players:ModifiersMenuPlayers;
+
+	var upperBarBG:FlxSprite;
+	var bottomBarBG:FlxSprite;
+
+	var backgroundCamera:FlxCamera;
+	var backdropCamera:FlxCamera;
+	var upperBackdropTxt:FlxBackdrop;
+	var bottomBackdropTxt:FlxBackdrop;
+
+	var transitionTint:FunkinSprite;
+
+	var glitchOptionTimer:FlxTimer;
+
+	var multLight:FunkinSprite;
+	var showing_multLight:Bool = false;
+
+	var unrkPulseTimer:FlxTimer;
+	var unrk_pulse_out:Bool = false;
+
+	var MOBILE_MULT_XOFFSET:Int = -200;
 
 	public function new()
     	{
@@ -405,76 +697,309 @@ class GammodMenu extends MusicBeatSubState
 			END POSITIONS:
 			- optionTxt; x: (FlxG.width - optionTxt.width) - 5; y: 3;
 			- multiplierNum; x: FlxG.width - multiplierNum.width; y: (FlxG.height - multiplierNum.height) + 10;
-			- overlayBackground; x: FlxG.width - overlayBackground.width;
+			- bg; x: FlxG.width - bg.width;
 			- bottomBand; x: FlxG.width - bottomBand.width; y: FlxG.height - bottomBand.height;
 		*/
 
-		trace(FlxG.width, FlxG.height);
+		transitionTint = new FunkinSprite().makeGraphic(FlxG.width,FlxG.height, 0xFF000000);
+		transitionTint.alpha = 0.2;
+
+		backgroundCamera = new FlxCamera(0, 0, FlxG.width, FlxG.height, 0);
+		backgroundCamera.bgColor = 0x00000000;
+		FlxG.cameras.insert(backgroundCamera, 1);
+
+		backdropCamera = new FlxCamera(0, 0, FlxG.width, FlxG.height, 0);
+		backdropCamera.bgColor = 0x00000000;
+		backdropCamera.angle = 4;
+		FlxG.cameras.insert(backdropCamera, 2);
+
+		upperBarBG = new FlxSprite();
+		upperBarBG.makeGraphic(FlxG.width * 2, 300);
+		upperBarBG.angle = 4; //-5
+		upperBarBG.x -= 30;
+		upperBarBG.y = -400; // -100
+		upperBarBG.antialiasing = false;
+		upperBarBG.cameras = [backgroundCamera];
+
+		bottomBarBG = new FlxSprite();
+		bottomBarBG.makeGraphic(FlxG.width * 2, 300);
+		bottomBarBG.angle = 4; //-5
+		bottomBarBG.x -= 30;
+		bottomBarBG.y = 800; // 600
+		bottomBarBG.antialiasing = false;
+		bottomBarBG.cameras = [backgroundCamera];
+
+		upperBackdropTxt = new FlxBackdrop(Paths.image('ui/gammodMenu/backdropTxt'), 0x01, 30, 0);
+		upperBackdropTxt.color = 0xffFFB9F4;
+		upperBackdropTxt.velocity.x = 200; // 20
+		upperBackdropTxt.y = -100; // 50
+		upperBackdropTxt.cameras = [backdropCamera];
+
+		bottomBackdropTxt = new FlxBackdrop(Paths.image('ui/gammodMenu/backdropTxt'), 0x01, 30, 0);
+		bottomBackdropTxt.color = 0xffFFB9F4;
+		bottomBackdropTxt.velocity.x = -200; // -20
+		bottomBackdropTxt.y = 700; // 580
+		bottomBackdropTxt.cameras = [backdropCamera];
+
+		// 210, 70 CONSTRUCTOR POSITIONS
+		// 410, 150 LATER POSITIONS
+		// Why? idonfakinou :D
+		players = new ModifiersMenuPlayers(0,0); 
+		players.x = 410 + (FullScreenScaleMode.gameCutoutSize.x * 0.44);
+		players.y = FlxG.height + 30;
+
+		screen_elemets_offset = Math.abs(1280 - FlxG.width);
+
+		borderColor = new FlxSprite();
+		borderColor.color = 0xFF000000;
 
 		buttonGroup = new FlxTypedSpriteGroup();
-		selectedArrow = new FlxTypedSpriteGroup();
 
-		optionTxt = new FlxText(0,0, 0, '', 1, true).setFormat(Paths.file('fonts/Technology-Bold.ttf', 'FONT'), 70, 0xFF66ffff);
-		optionTxt.setBorderStyle(FlxTextBorderStyle.OUTLINE, FlxColor.BLACK, 2, 1);
-		optionTxt.x = (FlxG.width - optionTxt.width) - 5;
-		optionTxt.y = 3;
-		optionTxt.scale.y = 0;
-		optionTxt.scale.x = 10;
+		multScreen = new FunkinSprite(0,0).loadGraphic(Paths.image('ui/gammodMenu/scoreMultScreen'));
+		multScreen.x = FlxG.width - multScreen.width - 10 + (Gammod.mobile() ? MOBILE_MULT_XOFFSET : 0);
+		multScreen.y = FlxG.height; // FlxG.height - multScreen.height - 61
 
-		multiplierNum = new FlxText(0,0, 0, '1.0', 1, true).setFormat(Paths.file('fonts/Technology-Bold.ttf', 'FONT'), 140, 0xFF66ffff);
-		multiplierNum.setBorderStyle(FlxTextBorderStyle.OUTLINE, FlxColor.BLACK, 4, 1);
-		multiplierNum.x = FlxG.width - multiplierNum.width;
-		multiplierNum.y = (FlxG.height - multiplierNum.height) + 10;
-		multiplierNum.scale.y = 0;
-		multiplierNum.scale.x = 10;
+		//0xFF66ffff
+		multiplierNum = new FlxText(0,0, 0, ModuleHandler.getModule('GammodMult').score_multiplier, 1, true).setFormat(Paths.file('fonts/fanfareticker.ttf', 'FONT'), 37, 0xFFffffff);
+		if (Math.floor(ModuleHandler.getModule('GammodMult').score_multiplier) == ModuleHandler.getModule('GammodMult').score_multiplier)
+		{
+			multiplierNum.text = multiplierNum.text + '.0';
+		}
+		multiplierNum.y = FlxG.height + 11;
+		multiplierNum.shader = new GlitchShake();
+		multiplierNum.shader.set_shakePower(0);
+		multiplierNum.scale.set(0.89,1);
 
-		overlayBackground = new FunkinSprite(0,0).loadGraphic(Paths.image('ui/gammodMenu/menuOverlay'));
-		overlayBackground.x = FlxG.width - overlayBackground.width;
-		overlayBackground.alpha = 0;
+		multiplierNumGlow = new FlxText(0,0, 0, ModuleHandler.getModule('GammodMult').score_multiplier, 1, true).setFormat(Paths.file('fonts/fanfareticker.ttf', 'FONT'), 37, 0xFF66ffff);
+		if (Math.floor(ModuleHandler.getModule('GammodMult').score_multiplier) == ModuleHandler.getModule('GammodMult').score_multiplier)
+		{
+			multiplierNumGlow.text = multiplierNum.text + '.0';
+		}
+		multiplierNumGlow.x = multiplierNum.x;
+		multiplierNumGlow.y = multiplierNum.y;
+		multiplierNumGlow.scale.set(0.89,1);
+		multiplierNumGlow.shader = new GaussianBlurShader(1);
+
+		multLight = new FunkinSprite(0,0);
+		multLight.frames = Paths.getSparrowAtlas('ui/gammodMenu/multLightning');
+		multLight.anim.addByPrefix('shock', 'shock', 24, false);
+		multLight.anim.play('shock');
+		multLight.visible = false;
+
+		funTxt = new FlxText(0,0, 0, '', 1, true).setFormat(Paths.file('fonts/fanfareticker.ttf', 'FONT'), 40, 0xFF66ffff);
+		funTxt.x = 40;
+		funTxt.y = (FlxG.height - funTxt.height) - 10;
+
+		descBorder = new FlxSprite(0,0).loadGraphic(Paths.image('ui/gammodMenu/bottomBandBorder'));
+		descBorder.x = FlxG.width - descBorder.width + 2;
+		descBorder.y = FlxG.height + (multScreen.height - 10);
+
+		bg = new FunkinSprite();
+		bg.makeGraphic(FlxG.width, FlxG.height, 0xffffffff);
+		bg.alpha = 0;
+		bg.cameras = [backgroundCamera];
+		//bg.shader = new LiquidBackgroundShader();
 		
-		arrowGlow = new FunkinSprite(0,0).loadGraphic(Paths.image('ui/gammodMenu/dottedArrow_glow'));
-		arrowGlow.color = FlxColor.WHITE;
-		selectedArrow.add(arrowGlow);
-		selectedArrow.add(new FunkinSprite(0,0).loadGraphic(Paths.image('ui/gammodMenu/dottedArrow')));
-		selectedArrow.scale.set(0.2, 0.2);
-		selectedArrow.y = (FlxG.height / 2) - 150;
+		selectedArrow = new FunkinSprite(0,0).loadGraphic(Paths.image('ui/gammodMenu/selectedArrow'));
 
 		sideBar = new FunkinSprite(0,0).loadGraphic(Paths.image('ui/gammodMenu/menuOverlay_sidebar'));
 		sideBar.x = -sideBar.width;
 
+		// This is a mess, but Messi has a mess in his name too and he's still the goat
+		/*sideTextPlay = new FunkinSprite(0,0).loadGraphic(Paths.image('ui/gammodMenu/menuOverlay_sidebarText2'));
+		sideTextPlay.color = text_tint;
+		sideTextPlay.visible = true;
+		sideTextMods = new FunkinSprite(0,0).loadGraphic(Paths.image('ui/gammodMenu/menuOverlay_sidebarText1'));
+		sideTextMods.color = text_tint;
+		sideTextMods.visible = true;
+		sideTextPlayB = new FunkinSprite(0,0).loadGraphic(Paths.image('ui/gammodMenu/menuOverlay_sidebarText2'));
+		sideTextPlayB.color = text_tint;
+		sideTextPlayB.x = -text_hoffset;
+		sideTextPlayB.y = sideTextPlayB.height;
+		sideTextPlayB.visible = true;
+		sideTextModsB = new FunkinSprite(0,0).loadGraphic(Paths.image('ui/gammodMenu/menuOverlay_sidebarText1'));
+		sideTextModsB.color = text_tint;
+		sideTextModsB.x = text_hoffset;
+		sideTextModsB.y = -sideTextModsB.height;
+		sideTextModsB.visible = true;*/
+
+		//visible_mods_text = sideTextMods;
+		//visible_play_text = sideTextPlay;
+		//introduced_mods_text = sideTextModsB;
+		//introduced_play_text = sideTextPlayB;
+
 		topBand = new FunkinSprite(0,0).loadGraphic(Paths.image('ui/gammodMenu/menuOverlay_topBand'));
 		topBand.y = -topBand.height;
 		bottomBand = new FunkinSprite(0,0).loadGraphic(Paths.image('ui/gammodMenu/menuOverlay_bottomBand'));
-		bottomBand.x = FlxG.width - bottomBand.width;
-		bottomBand.y = FlxG.height;
+		bottomBand.y = FlxG.height + (multScreen.height - 10);
 
 		buttonGroup.x += button_spacing;
 		buttonGroup.updateHitbox();
 
-		var background = new FlxSprite();
-		background.makeGraphic(FlxG.width + 1000, FlxG.height + 1000, FlxColor.BLACK);
-		background.x = FlxG.width;
+		screenCam = new FlxCamera(-5, -200, FlxG.width, FlxG.height, 0);
+		screenCam.bgColor = 0x00000000;
+		FlxG.cameras.add(screenCam);
 
-		for (mod in ModuleHandler.getModule('GammodModHandler').registered_mods.keys())
+		optionsScreen = new FunkinSprite(0,0).loadGraphic(Paths.image('ui/gammodMenu/optionsScreen'));
+		optionsScreen.camera = screenCam;
+		optionsScreen.x = FlxG.width - optionsScreen.width;
+
+		optionsLights = new FlxTypedSpriteGroup();
+		optionsLights.camera = screenCam;
+		lightsOff = new FunkinSprite(0,0).loadGraphic(Paths.image('ui/gammodMenu/optionsScreen_lightsOff'));
+		lightsOff.camera = screenCam;
+		lightsOn = new FunkinSprite(0,0).loadGraphic(Paths.image('ui/gammodMenu/optionsScreen_lightsOn'));
+		lightsOn.camera = screenCam;
+		lightsOn.alpha = 0;
+		optionsLights.add(lightsOff);
+		optionsLights.add(lightsOn);
+		optionsLights.x = FlxG.width - optionsLights.width;
+		optionsLights.y = optionsLights.y - 2;
+
+		scoreWontSave = new FunkinSprite(0,0).loadGraphic(Paths.image('ui/gammodMenu/scoreWillNotSave')); // BASE Y POS: 575
+		scoreWontSave.x = (multScreen.x - scoreWontSave.width + 10);
+		scoreWontSave.y = 575;
+		scoreWontSave.visible = false;
+		scoreWontSave.shader = new AdjustColorShader();
+
+		disableModsOff = new FunkinSprite(0,0).loadGraphic(Paths.image('ui/gammodMenu/optionsScreen_resetModsOff' + (Gammod.mobile() ? '_mobile' : '')));
+		disableModsOff.camera = screenCam;
+		disableModsOff.x = (FlxG.width - disableModsOff.width) + 3;
+		disableModsOff.y -= 4;
+		disableModsOff.scale.set(0.96, 0.96);
+		disableModsOn = new FunkinSprite(0,0).loadGraphic(Paths.image('ui/gammodMenu/optionsScreen_resetModsOn' + (Gammod.mobile() ? '_mobile' : '')));
+		disableModsOn.camera = screenCam;
+		disableModsOn.x = (FlxG.width - disableModsOn.width) + 3;
+		disableModsOn.y -= 4;
+		disableModsOn.scale.set(0.96, 0.96);
+		disableModsOn.clipRect = new FlxRect(0,0, disableModsOn.width,0);
+
+		optionTxt = new FlxText(0,0, 0, '', 1, true).setFormat(Paths.file('fonts/fanfareticker.ttf', 'FONT'), 70, intended_option_color);
+		optionTxt.camera = screenCam;
+		optionTxt.setBorderStyle(FlxTextBorderStyle.OUTLINE, FlxColor.BLACK, 2, 1);
+		optionTxt.x = (optionsTxt_center - (optionTxt.width / 2)) + screen_elemets_offset;
+		optionTxt.y = 3;
+		optionTxt.clipRect = new FlxRect(0,0, disableModsOn.width,0);
+		scale_options_multiplier = optionTxt.width > 510 ? 510 / optionTxt.width : 1;
+		optionTxt.scale.set(scale_options_multiplier,scale_options_multiplier);
+		optionTxt.shader = new GlitchShake();
+		optionTxt.shader.set_shakePower(0.05);
+		optionTxt.shader.set_shakeRate(0);
+
+		leftSelectorArrow = new GammodSelectorArrow(true).init(560 + screen_elemets_offset, 17);
+		for (member in leftSelectorArrow.members) member.camera = screenCam;
+		rightSelectorArrow = new GammodSelectorArrow(false).init(1100 + screen_elemets_offset, 17);
+		for (member in rightSelectorArrow.members) member.camera = screenCam;
+
+		focusTint = new FunkinSprite(0,0).makeGraphic(FlxG.width + 500, FlxG.height + 500, FlxColor.BLACK);
+		focusTint.alpha = 0;
+
+		focusSound = FunkinSound.load(Paths.sound('resetModsRiser'), 0);
+
+		tipTxt = new FlxText(optionsScreen.x + 110,0, 0, Gammod.mobile() ? 'Double tap option to disable' : 'Double tap [CTRL] to disable', 1, true).setFormat('5by7', 30, 0xFFFFFFFF);
+		tipTxt.camera = screenCam;
+		tipTxt.alpha = 0;
+		tipTxt.setBorderStyle(FlxTextBorderStyle.OUTLINE, FlxColor.BLACK, 2, 1);
+
+		modifiersHitboxLeft = new FlxSprite(0,0).makeGraphic(500,FlxG.height, FlxColor.TRANSPARENT);
+		modifiersHitboxDown = new FlxSprite(500,120).makeGraphic(1000,FlxG.height, FlxColor.TRANSPARENT);
+		optionsSliderHitbox = new FlxSprite(650 + screen_elemets_offset,0).makeGraphic(400,100, FlxColor.TRANSPARENT);
+		leftArrowHitbox = new FlxSprite(530 + screen_elemets_offset,0).makeGraphic(100,100, FlxColor.TRANSPARENT);
+		rightArrowHitbox = new FlxSprite(1050 + screen_elemets_offset,0).makeGraphic(100,100, FlxColor.TRANSPARENT);
+		resetModsHitbox = new FlxSprite(1150,0).makeGraphic(150,120, FlxColor.TRANSPARENT);
+
+		for (mod in ModuleHandler.getModule('GammodModifierHandler').registered_mods_order)
 		{
-			if (!ModuleHandler.getModule('GammodModHandler').registered_mods[mod].hidden)
+			//trace('creating... ' + mod);
+
+			var banned: Bool = false;
+
+			for (platform in ModuleHandler.getModule('GammodModifierHandler').registered_mods[mod].banned_platforms)
 			{
-				var new_button:GammodModButton = new GammodModButton(ModuleHandler.getModule('GammodModHandler').registered_mods[mod]);
-				new_button.assigned_mod = ModuleHandler.getModule('GammodModHandler').registered_mods[mod];
-				buttons.push(new_button);
-				buttonGroup.add(new_button);
+				switch (platform)
+				{
+					case GammodPlatform.MOBILE(hard_ban):
+						if (Gammod.mobile())
+						{
+							banned = true;
+						}
+					case GammodPlatform.PC(hard_ban):
+						if (!Gammod.mobile())
+						{
+							banned = true;
+						}
+				}
 			}
+
+			if (banned) continue;
+
+			var new_button:GammodModButton = new GammodModButton(ModuleHandler.getModule('GammodModifierHandler').registered_mods[mod]);
+			new_button.assigned_mod = ModuleHandler.getModule('GammodModifierHandler').registered_mods[mod];
+			buttons.push(new_button);
+			buttonGroup.add(new_button);
 		}
 
-		this.add(background);
-		this.add(overlayBackground);
+		this.add(transitionTint);
+
+		this.add(bg);
+
+		this.add(upperBarBG);
+		this.add(bottomBarBG);
+		this.add(upperBackdropTxt);
+		this.add(bottomBackdropTxt);
+		this.add(players);
 		this.add(sideBar);
+
 		this.add(topBand);
+
+		//this.add(sideTextPlay);
+		//this.add(sideTextMods);
+		//this.add(sideTextPlayB);
+		//this.add(sideTextModsB);
 		this.add(buttonGroup);
-		this.add(bottomBand);
-		this.add(optionTxt);
-		this.add(multiplierNum);
 		this.add(selectedArrow);
+
+		this.add(bottomBand);
+		this.add(funTxt);
+		this.add(descBorder);
+		this.add(multScreen);
+		this.add(scoreWontSave);
+		this.add(multiplierNumGlow);
+		this.add(multiplierNum);
+		this.add(multLight);
+
+		this.add(focusTint);
+
+		this.add(screenCam);
+
+		this.add(tipTxt);
+		this.add(optionsScreen);
+		this.add(optionTxt);
+		this.add(optionsLights);
+
+		this.add(leftSelectorArrow);
+		this.add(rightSelectorArrow);
+
+		this.add(disableModsOff);
+		this.add(disableModsOn);
+
+		this.add(modifiersHitboxLeft);
+		this.add(modifiersHitboxDown);
+		this.add(optionsSliderHitbox);
+		this.add(leftArrowHitbox);
+		this.add(rightArrowHitbox);
+		this.add(resetModsHitbox);
+
+		//visible_play_text.y = visible_play_text.height;
+		//visible_mods_text.y = -visible_mods_text.height;
+		//visible_play_text.x = -text_hoffset;
+		//visible_mods_text.x = text_hoffset;
+
+		if (Gammod.mobile())
+		{
+			FlxG.state.subState.backButton.visible = false;
+			addBackButton(FlxG.state.subState.backButton.x, FlxG.state.subState.backButton.y);
+		}
 		
 		//freeplayScoreTxt.set_scoreShit(100);
 
@@ -482,81 +1007,107 @@ class GammodMenu extends MusicBeatSubState
 		selectButton(ModuleHandler.getModule('GammodStateHandler').remembered_mod_position, true);
 		//refreshCurrentOption();
 
+		//bg.shader.setColors(buttons[selected_button].assigned_mod.colors[0], buttons[selected_button].assigned_mod.colors[1]);
+
 		allow_input = true;
 
-		FlxG.sound.music.stop();
-		FlxG.sound.music = FunkinSound.load(Paths.music('rust'), 1.0, true, false, true, false);
+		FlxG.sound.cache(Paths.music('rust/rust'));
+		FunkinSound.playMusic
+		(
+			'rust',
+			{
+				startingVolume: 1,
+				overrideExisting: true,
+				restartTrack: true,
+				persist: true
+			}
+		);
+		if (ModuleHandler.getModule('GammodPlaybackRate') != null) FlxG.sound.music.pitch = ModuleHandler.getModule('GammodPlaybackRate').value;
 
 		trace('Finished creating objects for the new GammodMenu state. Beginning transition.');
 
-		ModuleHandler.getModule('FukkitTweenManager').cancel('moveTrans_bottomBand');
-		ModuleHandler.getModule('FukkitTweenManager').tween(
+		new FlxTimer().start
+		(
+			0.05,
+			()->
+			{
+				can_exit = true;
+			}
+		);
+
+		Tweens.cancel('fade_transitionTint');
+		Tweens.tween(
+			'fade_transitionTint',
+			transitionTint,
+			{ alpha: 0.5 },
+			0.3,
+			0,
+			'sineOut'
+		);
+
+		Tweens.cancel('moveTrans_bottomBand');
+		Tweens.tween(
 			'moveTrans_bottomBand',
 			bottomBand,
-			{ y: FlxG.height - bottomBand.height },
+			{ y: (FlxG.height - bottomBand.height) + 1 },
 			0.3,
 			0 + appear_delay,
 			'sineOut'
 		);
 
-		ModuleHandler.getModule('FukkitTweenManager').cancel('appear1x_multiplierNum');
-		ModuleHandler.getModule('FukkitTweenManager').tween(
-			'appear1x_multiplierNum',
-			multiplierNum.scale,
-			{ x: 1 },
-			0.1,
-			0.3 + appear_delay,
-			'quadOut'
-		);
-		ModuleHandler.getModule('FukkitTweenManager').cancel('appear1y_multiplierNum');
-		ModuleHandler.getModule('FukkitTweenManager').tween(
-			'appear1y_multiplierNum',
-			multiplierNum.scale,
-			{ y: 1.2 },
-			0.08,
-			0.3 + appear_delay,
-			'quadOut'
-		);
-		ModuleHandler.getModule('FukkitTweenManager').cancel('appear2_multiplierNum');
-		ModuleHandler.getModule('FukkitTweenManager').tween(
-			'appear2_multiplierNum',
-			multiplierNum.scale,
-			{ y: 1 },
-			0.03,
-			0.38 + appear_delay,
-			'circOut'
+		Tweens.cancel('moveTrans_descBorder');
+		Tweens.tween(
+			'moveTrans_descBorder',
+			descBorder,
+			{ y: (FlxG.height - descBorder.height) + 2 },
+			0.3,
+			0 + appear_delay,
+			'sineOut'
 		);
 
-		ModuleHandler.getModule('FukkitTweenManager').cancel('appear1x_optionTxt');
-		ModuleHandler.getModule('FukkitTweenManager').tween(
-			'appear1x_optionTxt',
-			optionTxt.scale,
-			{ x: 1 },
-			0.1,
-			0.6 + appear_delay,
-			'quadOut'
-		);
-		ModuleHandler.getModule('FukkitTweenManager').cancel('appear1y_optionTxt');
-		ModuleHandler.getModule('FukkitTweenManager').tween(
-			'appear1y_optionTxt',
-			optionTxt.scale,
-			{ y: 1.2 },
-			0.08,
-			0.6 + appear_delay,
-			'quadOut'
-		);
-		ModuleHandler.getModule('FukkitTweenManager').cancel('appear2_optionTxt');
-		ModuleHandler.getModule('FukkitTweenManager').tween(
-			'appear2_optionTxt',
-			optionTxt.scale,
-			{ y: 1 },
-			0.03,
-			0.68 + appear_delay,
-			'circOut'
+		Tweens.cancel('appear_players');
+		Tweens.tween(
+			'appear_players',
+			players,
+			{ y: 150 },
+			0.4,
+			0 + appear_delay + 0.05,
+			'expoOut'
 		);
 
-		ModuleHandler.getModule('FukkitTweenManager').cancel('moveTrans_sideBar');
-		ModuleHandler.getModule('FukkitTweenManager').tween(
+		Tweens.cancel('appear_multScreen');
+		Tweens.tween(
+			'appear_multScreen',
+			multScreen,
+			{ y: FlxG.height - multScreen.height - 61 },
+			0.3,
+			0 + appear_delay,
+			'sineOut'
+		);
+
+		Tweens.cancel('appear_multNum');
+		Tweens.tween(
+			'appear_multNum',
+			multiplierNum,
+			{ y: FlxG.height - 102 },
+			0.3,
+			0 + appear_delay,
+			'sineOut'
+		);
+
+
+		Tweens.cancel('appear_multNumGlow');
+		Tweens.tween(
+			'appear_multNumGlow',
+			multiplierNumGlow,
+			{ y: FlxG.height - 102 },
+			0.3,
+			0 + appear_delay,
+			'sineOut'
+		);
+
+		Tweens.cancel('moveTrans_sideBar');
+		Tweens.tween(
 			'moveTrans_sideBar',
 			sideBar,
 			{ x: 0 },
@@ -565,8 +1116,8 @@ class GammodMenu extends MusicBeatSubState
 			'quintOut'
 		);
 
-		ModuleHandler.getModule('FukkitTweenManager').cancel('moveTrans_topBand');
-		ModuleHandler.getModule('FukkitTweenManager').tween(
+		Tweens.cancel('moveTrans_topBand');
+		Tweens.tween(
 			'moveTrans_topBand',
 			topBand,
 			{ y: 0 },
@@ -575,17 +1126,286 @@ class GammodMenu extends MusicBeatSubState
 			'quintOut'
 		);
 
-		ModuleHandler.getModule('FukkitTweenManager').cancel('recolor_overlayBackground');
-		ModuleHandler.getModule('FukkitTweenManager').cancel('fadeTrans_overlayBackground');
-		overlayBackground.color = 0x00000000;
-		ModuleHandler.getModule('FukkitTweenManager').color(
-			'fadeTrans_overlayBackground',
-			overlayBackground,
-			buttons[selected_button].assigned_mod.color,
-			0.7,
-			0,
-			'quartOut'
+		Tweens.cancel('moveTrans_screenCam');
+		Tweens.tween(
+			'moveTrans_screenCam',
+			screenCam,
+			{ y: 0 },
+			0.6,
+			0 + appear_delay,
+			'quintOut'
 		);
+
+		/*Tweens.cancel('recolor_bg');
+		//bg.color = 0x00000000;
+		Tweens.color(
+			'recolor_bg',
+			bg,
+			0xFFFFFFFF,
+			0.7,
+			0.2,
+			'quartOut'
+		);*/
+
+		introProgressChange = FlxTween.num
+		(
+			0,
+			1,
+			0.7,
+			{
+				ease: FlxEase.quartOut,
+			},
+			(value) ->
+			{
+				introProgress = value;
+			}
+		);
+
+		new FlxTimer().start
+		(
+			0.3 + appear_delay,
+			()->
+			{
+				can_write_desc = true;
+				writeDescription();
+			}
+		);
+
+		new FlxTimer().start
+		(
+			0.6, 
+			()->
+			{
+				if (!transitioningOut)
+				{
+					if (!rendering_animation) renderAnimation();
+					FlxG.state.subState.persistentDraw = false;
+
+					// BACKDROPS
+					Tweens.cancel('appear_upBackdrop');
+					Tweens.tween(
+						'appear_upBackdrop',
+						upperBackdropTxt,
+						{ y: 50 },
+						0.4,
+						0.3,
+						'expoOut'
+					);
+					Tweens.cancel('decelerate_upBackdrop');
+					Tweens.tween(
+						'decelerate_upBackdrop',
+						upperBackdropTxt.velocity,
+						{ x: 20 },
+						2,
+						0.5,
+						'expoOut'
+					);
+					Tweens.cancel('appear_downBackdrop');
+					Tweens.tween(
+						'appear_downBackdrop',
+						bottomBackdropTxt,
+						{ y: 580 },
+						0.4,
+						0.3,
+						'expoOut'
+					);
+					Tweens.cancel('decelerate_downBackdrop');
+					Tweens.tween(
+						'decelerate_downBackdrop',
+						bottomBackdropTxt.velocity,
+						{ x: -20 },
+						2,
+						0.5,
+						'expoOut'
+					);
+
+					transitionTint.alpha = 0;
+
+					bg.alpha = 1;
+					bg.color = 0xFFFFFFFF;
+					Tweens.cancel('flash_bg');
+					Tweens.color(
+						'flash_bg',
+						bg,
+						0xFF6400D8,
+						1,
+						0,
+						'expoOut'
+					);
+					Tweens.cancel('appear_upperBarBG');
+					Tweens.tween(
+						'appear_upperBarBG',
+						upperBarBG,
+						{ y: -100 },
+						0.5,
+						0.05,
+						'expoOut'
+					);
+					Tweens.cancel('appear_bottomBarBG');
+					Tweens.tween(
+						'appear_bottomBarBG',
+						bottomBarBG,
+						{ y: 600 },
+						0.5,
+						0,
+						'expoOut'
+					);
+					/*Tweens.cancel('slide_mods');
+					Tweens.tween(
+						'slide_mods',
+						visible_mods_text,
+						{ x: 0, y: 0 },
+						0.7,
+						0,
+						'expoOut'
+					);
+					Tweens.cancel('slide_play');
+					Tweens.tween(
+						'slide_play',
+						visible_play_text,
+						{ x: 0, y: 0 },
+						0.7,
+						0,
+						'expoOut'
+					);
+					new FlxTimer().start
+					(
+						0.7,
+						()->
+						{
+							animTextSlide();
+						}
+					);*/
+				}
+			}
+		);
+
+		new FlxTimer().start
+		(
+			0.6 + appear_delay,
+			()->
+			{
+				if (transitioningOut) return; 
+				transitioningIn = false;
+			}
+		);
+
+		new FlxTimer().start
+		(
+			0.8 + appear_delay,
+			()->
+			{
+				if (transitioningOut) return;
+				if (needs_unranked && ModuleHandler.getModule('GammodMult').unranked)
+				{
+					showUnranked();
+				}
+			}
+		);
+	}
+
+	public function showUnranked()
+	{
+		if (showing_unranked_sign) return;
+		var da_y:Int = 540;
+		needs_unranked = false;
+		showing_unranked_sign = true;
+		scoreWontSave.shader.brightness = 100;
+		scoreWontSave.shader.contrast = -10;
+		scoreWontSave.visible = true;
+		scoreWontSave.y = da_y + 20;
+		Tweens.cancel('appear_unranked');
+		Tweens.tween
+		(
+			'appear_unranked',
+			scoreWontSave,
+			{ y: da_y + 34 },
+			0.2,
+			0,
+			'quadOut',
+			'oneshot',
+			()->
+			{
+				if (!transitioningIn) FunkinSound.playOnce(Paths.sound('optionUnranked'));
+				scoreWontSave.shader.brightness = 0;
+				scoreWontSave.shader.contrast = 0;
+				Tweens.tween
+				(
+					'appear_unranked',
+					scoreWontSave,
+					{ y: da_y },
+					0.2,
+					0,
+					'expoIn'
+				);
+			}
+		);
+		var animSpeedSecs: Float = 0.7; // animSpeedWHAAT???
+		if (unrkPulseTimer != null)
+		{
+			unrkPulseTimer.cancel();
+			unrkPulseTimer.destroy();
+			unrkPulseTimer = null;
+		}
+		scoreWontSave.alpha = 1;
+		unrk_pulse_out = true;
+		unrkPulseTimer = FlxTimer.loop
+		(
+			animSpeedSecs,
+			()->
+			{
+				if (unrk_pulse_out)
+				{
+					Tweens.cancel('pulseOut_unranked');
+					Tweens.cancel('pulseIn_unranked');
+					Tweens.tween
+					(
+						'pulseOut_unranked',
+						scoreWontSave,
+						{ alpha: 0.5 },
+						animSpeedSecs,
+						'easeInOut'
+					);
+				}
+				else
+				{
+					Tweens.cancel('pulseOut_unranked');
+					Tweens.cancel('pulseIn_unranked');
+					Tweens.tween
+					(
+						'pulseIn_unranked',
+						scoreWontSave,
+						{ alpha: 1 },
+						animSpeedSecs,
+						'easeInOut'
+					);
+				}
+				unrk_pulse_out = !unrk_pulse_out;
+			},
+			0
+		);
+	}
+
+	public function hideUnranked()
+	{
+		Tweens.cancel('pulseOut_unranked');
+		Tweens.cancel('pulseIn_unranked');
+		scoreWontSave.visible = false;
+		showing_unranked_sign = false;
+		if (unrkPulseTimer != null)
+		{
+			unrkPulseTimer.cancel();
+			unrkPulseTimer.destroy();
+			unrkPulseTimer = null;
+		}
+	}
+
+	public override function destroy():Void
+	{
+		super.destroy();
+
+		if (lightsTimer != null) lightsTimer.destroy();
+		if (slideLapTimer != null) slideLapTimer.destroy();
 	}
 
 	public function arrangeButtonsVertically()
@@ -596,16 +1416,42 @@ class GammodMenu extends MusicBeatSubState
 		}
 	}
 
+	public function writeDescription(?description: String)
+	{
+		if (description == null) description = buttons[selected_button].assigned_mod.description;
+		writing_animation = true;
+		desc_content = description;
+		funTxt.text = '';
+
+		desc_progress = 1;
+		if (textWriteTimer != null)
+		{
+			textWriteTimer.cancel();
+			textWriteTimer.destroy();
+			textWriteTimer = null;
+		}
+		textWriteTimer = FlxTimer.loop
+		(
+			0.025,
+			()->
+			{
+				desc_progress += 1;
+				funTxt.text = desc_content.substr(0,desc_progress);
+				var sound:FunkinSound = FunkinSound.playOnce(Paths.sound('textWrite/' + FlxG.random.int(1,6)));
+				sound.pitch = FlxG.random.float(0.8,1.2);
+				sound.volume = 10;
+			},
+			description.length
+		);
+	}
+
 	public function selectButton(?button: Int, from_freeplay: Bool = false)
 	{
-		if (!from_freeplay)
-		{
-			FunkinSound.playOnce(Paths.sound('buttonSelect'));
-		}
+		if (button == selected_button) return;
 		if (selected_button != null)
 		{
-			ModuleHandler.getModule('FukkitTweenManager').cancel('select_currentButton' + buttons[selected_button].ID);
-			ModuleHandler.getModule('FukkitTweenManager').tween(
+			Tweens.cancel('select_currentButton' + buttons[selected_button].ID);
+			Tweens.tween(
 				'deselect_previousButton' + buttons[selected_button].ID,
 				buttons[selected_button],
 				{ x: deselected_position + buttonGroup.x },
@@ -618,17 +1464,17 @@ class GammodMenu extends MusicBeatSubState
 
 		if (button != null) selected_button = button;
 
-		handleOptions(true);
+		handleOptions(from_freeplay);
 
 		selectedArrow.x = -200;
 		arrow_hover = false;
-		ModuleHandler.getModule('FukkitTweenManager').cancel('move_selectedArrow');
-		ModuleHandler.getModule('FukkitTweenManager').tween(
+		Tweens.cancel('move_selectedArrow');
+		Tweens.tween(
 			'move_selectedArrow',
 			selectedArrow,
-			{ x: -20 },
-			0.8,
+			{ x: -2 },
 			0.2,
+			0,
 			'circOut',
 			'oneshot',
 			function ()
@@ -637,8 +1483,8 @@ class GammodMenu extends MusicBeatSubState
 			}
 		);
 
-		ModuleHandler.getModule('FukkitTweenManager').cancel('deselect_previousButton' + buttons[selected_button].ID);
-		ModuleHandler.getModule('FukkitTweenManager').tween(
+		Tweens.cancel('deselect_previousButton' + buttons[selected_button].ID);
+		Tweens.tween(
 			'select_currentButton' + buttons[selected_button].ID,
 			buttons[selected_button],
 			{ x: selected_offset + buttonGroup.x },
@@ -648,8 +1494,8 @@ class GammodMenu extends MusicBeatSubState
 		);
 		buttons[selected_button].pullUpOverlay();
 
-		ModuleHandler.getModule('FukkitTweenManager').cancel('move_buttonGroup');
-		ModuleHandler.getModule('FukkitTweenManager').tween(
+		Tweens.cancel('move_buttonGroup');
+		Tweens.tween(
 			'move_buttonGroup',
 			buttonGroup,
 			{ y: ((FlxG.height / 2) - ((buttons[0].height + button_spacing) * selected_button) - (buttons[0].height)) + 9 },
@@ -657,43 +1503,200 @@ class GammodMenu extends MusicBeatSubState
 			0,
 			'quadOut'
 		);
+		if (!from_freeplay)
+		{
+			FunkinSound.playOnce(Paths.sound('buttonSelect'));
 
-		ModuleHandler.getModule('FukkitTweenManager').cancel('recolor_overlayBackground');
-		ModuleHandler.getModule('FukkitTweenManager').color(
-			'recolor_overlayBackground',
-			overlayBackground,
-			buttons[selected_button].assigned_mod.color,
-			0.3,
-			0,
-			'linear'
-		);
+			if (extraSpeedChange != null)
+			{
+				extraSpeedChange.cancel();
+				extraSpeedChange.destroy();
+				extraSpeedChange = null;
+			}
 
-		arrowGlow.color = buttons[selected_button].assigned_mod.color;
+			//bg.shader.setColors(buttons[selected_button].assigned_mod.colors[0], buttons[selected_button].assigned_mod.colors[1]);
+
+			extraSpeedChange = FlxTween.num
+			(
+				1,
+				extraSpeedPeak,
+				0.1,
+				{
+					ease: FlxEase.circOut,
+					onComplete:
+					() ->
+					{
+						extraSpeedChange = FlxTween.num
+						(
+							extraSpeedPeak,
+							1,
+							0.4,
+							{
+								ease: FlxEase.expoInOut,
+							},
+							(value) ->
+							{
+								extraSpeed = value;
+							}
+						);
+					}
+				},
+				(value) ->
+				{
+					extraSpeed = value;
+				}
+			);
+		}
 	}
 
 	public function handleOptions(from_freeplay: Bool = false) // TO CHANGE TO A NEW MOD
 	{
 		refreshCurrentOption(from_freeplay);
+
+		if (can_write_desc) writeDescription((from_freeplay ? '' : null));
+
+		if (!from_freeplay) renderAnimation();
 	}
 
-	public function switchCurrentOption(right: Bool) // TO SWITCH AROUND THE OPTION OF THE CURRENTLY SELECTED MOD
+	public function juiceMult()
 	{
-		switch(buttons[selected_button].assigned_mod.type)
+		if (shaderTimer != null)
 		{
-			case 'Switch':
-				buttons[selected_button].assigned_mod.value = !buttons[selected_button].assigned_mod.value;
-			case 'List':
-				buttons[selected_button].assigned_mod.value = buttons[selected_button].assigned_mod.default_value[FlxMath.wrap(buttons[selected_button].assigned_mod.default_value.indexOf(buttons[selected_button].assigned_mod.value) + (right ? 1 : -1), 0, buttons[selected_button].assigned_mod.default_value.length - 1)];
-			case 'IntRange':
-				buttons[selected_button].assigned_mod.value = FlxMath.bound(buttons[selected_button].assigned_mod.value + (right ? 1 : -1), buttons[selected_button].assigned_mod.default_value[1], buttons[selected_button].assigned_mod.default_value[2]);
-			case 'FloatRange':
-				buttons[selected_button].assigned_mod.value = FlxMath.roundDecimal(FlxMath.bound(buttons[selected_button].assigned_mod.value + (right ? buttons[selected_button].assigned_mod.default_value[1] : -buttons[selected_button].assigned_mod.default_value[1]), buttons[selected_button].assigned_mod.default_value[2], buttons[selected_button].assigned_mod.default_value[3]),1);
+			shaderTimer.cancel();
+			shaderTimer.destroy();
+			shaderTimer = null;
 		}
+		multiplierNum.shader.set_shakeRate(1);
+		multiplierNum.shader.set_shakePower(0.1);
+		shaderTimer = new FlxTimer().start
+		(
+			0.12,
+			()->
+			{
+				multiplierNum.shader.set_shakePower(0);
+				multiplierNum.shader.set_shakeRate(0);
+			}
+		);
+	}
+
+	public function renderAnimation()
+	{
+		rendering_animation = true;
+		optionTxt.clipRect = new FlxRect(0, 0, optionTxt.width, 0);
+		if (textAnimator != null) textAnimator.cancel();
+		textAnimator = FlxTween.num
+		(
+			0,
+			optionTxt.height,
+			0.5,
+			{
+				onComplete: () ->
+				{
+					optionTxt.clipRect = null;
+					rendering_animation = false;
+				}
+			},
+			(value) ->
+			{
+				optionTxt.clipRect = new FlxRect(0, 0, optionTxt.width, value);
+			}
+		);
+		borderColor.color = 0xFF888888;
+		optionTxt.color = 0xFFFFFFFF;
+		Tweens.cancel('recolor_optionTxt');
+		Tweens.cancel('recolor_optionTxt2');
+		Tweens.cancel('recolor_optionTxt3');
+		Tweens.color(
+			'recolor_optionTxt',
+			borderColor,
+			0xFFFFFFFF,
+			0.3,
+			0,
+			'quadIn'
+		);
+		Tweens.color(
+			'recolor_optionTxt2',
+			borderColor,
+			0xFF000000,
+			0.3,
+			0.3,
+			'linear'
+		);
+		Tweens.color(
+			'recolor_optionTxt3',
+			optionTxt,
+			intended_option_color,
+			0.2,
+			0.1,
+			'linear'
+		);
+		renderSound_step = FlxMath.wrap(renderSound_step + 1, 1, 4);
+		if (renderSound != null) renderSound.destroy();
+		renderSound = FunkinSound.playOnce(Paths.sound('renderSounds/' + renderSound_step), 4);
+	}
+
+	public function wrapFloat(value: Float, min: Float, max: Float):Float
+	{
+		if (value > max) return min;
+		if (value < min) return max;
+		return value;
+	}
+
+	public function wrapInt(value: Int, min: Int, max: Int):Int
+	{
+		if (value > max) return min;
+		if (value < min) return max;
+		return value;
+	}
+
+	public function switchCurrentOption(right: Bool, to_limit: Bool = false) // TO SWITCH AROUND THE OPTION OF THE CURRENTLY SELECTED MOD
+	{
+		var at_pre_default:Bool = false;
+		trace(buttons[selected_button].assigned_mod);
+		if (buttons[selected_button].assigned_mod.pre_default != null) at_pre_default = buttons[selected_button].assigned_mod.value == (buttons[selected_button].assigned_mod.pre_default ?? null);
+		
+		// Logic that determines how pressing left or right affects the currently selected option.
+		if (to_limit)
+		{
+			switch(buttons[selected_button].assigned_mod.type)
+			{
+				case GammodModType.SWITCH:
+					buttons[selected_button].assigned_mod.value = right;
+				case GammodModType.LIST(values):
+					buttons[selected_button].assigned_mod.value = right ? values[values.length-1] : buttons[selected_button].assigned_mod.default_value;
+				case GammodModType.INTRANGE(min, max, step), GammodModType.FLOATRANGE(min, max, step):
+					buttons[selected_button].assigned_mod.value = !right ? min : max;
+			}
+		}
+		else
+		{
+			switch(buttons[selected_button].assigned_mod.type)
+			{
+				case GammodModType.SWITCH:
+					buttons[selected_button].assigned_mod.value = at_pre_default ? buttons[selected_button].assigned_mod.default_value : !buttons[selected_button].assigned_mod.value;
+				case GammodModType.LIST(values):
+					buttons[selected_button].assigned_mod.value = at_pre_default ? buttons[selected_button].assigned_mod.default_value : values[FlxMath.wrap(values.indexOf(buttons[selected_button].assigned_mod.value) + (right ? 1 : -1), 0, values.length - 1)];
+				case GammodModType.INTRANGE(min, max, step):
+					buttons[selected_button].assigned_mod.value = at_pre_default ? buttons[selected_button].assigned_mod.default_value : wrapInt(buttons[selected_button].assigned_mod.value + (right ? step : -step), min, max);
+				case GammodModType.FLOATRANGE(min, max, step):
+					trace(at_pre_default);
+					buttons[selected_button].assigned_mod.value = at_pre_default ? buttons[selected_button].assigned_mod.default_value : FlxMath.roundDecimal(wrapFloat(buttons[selected_button].assigned_mod.value + (right ? step : -step), min, max), FlxMath.getDecimals(step));
+			}
+		}
+		if (GammodMult.getMult(buttons[selected_button].assigned_mod) == null)
+		{
+			intended_option_color = 0xFFFF0000;
+		}
+		else
+		{
+			intended_option_color = 0xFF66ffff;
+		}
+		saveValue();
 		if (right)
 		{
 			FunkinSound.playOnce(Paths.sound('optionRight'));
-			ModuleHandler.getModule('FukkitTweenManager').cancel('deselect_previousButton' + buttons[selected_button].ID);
-			ModuleHandler.getModule('FukkitTweenManager').tween(
+			Tweens.cancel('deselect_previousButton' + buttons[selected_button].ID);
+			Tweens.tween(
 				'select_currentButton' + buttons[selected_button].ID,
 				buttons[selected_button],
 				{ x: selected_offset + buttonGroup.x },
@@ -706,23 +1709,80 @@ class GammodMenu extends MusicBeatSubState
 			FunkinSound.playOnce(Paths.sound('optionLeft'));
 		}
 
+		optionTxt.color = 0xFFFFFFFF;
+		Tweens.cancel('recolor_optionTxt3');
+		Tweens.color(
+			'recolor_optionTxt3',
+			optionTxt,
+			intended_option_color,
+			0.2,
+			0.1,
+			'linear'
+		);
+
+		final respectiveArrow: GammodSelectorArrow;
+		if (right)
+		{
+			respectiveArrow = rightSelectorArrow;
+		}
+		else
+		{
+			respectiveArrow = leftSelectorArrow;
+		}
+		respectiveArrow.setColor(0xFFFFFFFF);
+		/*Tweens.cancel('recolor_arrowOff' + (right ? 'Right' : 'Left'));
+		Tweens.cancel('recolor_arrowOn' + (right ? 'Right' : 'Left'));
+		Tweens.color(
+			'recolor_arrowOff' + (right ? 'Right' : 'Left'),
+			respectiveArrow.offTexture,
+			0xFF66FFFF,
+			0.2,
+			0.1,
+			'linear'
+		);
+		Tweens.color(
+			'recolor_arrowOn' + (right ? 'Right' : 'Left'),
+			respectiveArrow.onTexture,
+			0xFF66FFFF,
+			0.2,
+			0.1,
+			'linear'
+		);*/
+
 		refreshCurrentOption();
 	}
 
-	public function refreshCurrentOption(from_freeplay: Bool = false)
+	public function saveValue(?index:Int)
 	{
-		if (!from_freeplay)
+		if (index == null) index = selected_button;
+		if (Save.instance.getModOptions('Gammod').modifiers == null) Save.instance.getModOptions('Gammod').modifiers = new StringMap();
+		Save.instance.getModOptions('Gammod').modifiers.set(buttons[index].assigned_mod.moduleId, buttons[index].assigned_mod.value);
+	}
+
+	public function refreshCurrentOption(from_freeplay: Bool = false, advice: Bool = false)
+	{
+		if (glitchOptionTimer != null)
 		{
-			optionTxt.scale.set(1.3, 0.6);
-			ModuleHandler.getModule('FukkitTweenManager').cancel('juice_optionTxt');
-			ModuleHandler.getModule('FukkitTweenManager').tween(
-				'juice_optionTxt',
-				optionTxt.scale,
-				{ x: 1, y: 1 },
-				0.2,
-				0,
-				'circOut'
-			);
+			glitchOptionTimer.cancel();
+			glitchOptionTimer.destroy();
+			glitchOptionTimer = null;
+		}
+		glitchOptionTimer = new FlxTimer().start
+		(
+			0.3,
+			()->
+			{
+				optionTxt.shader.set_shakeRate(0);
+			}
+		);
+		optionTxt.shader.set_shakeRate(10);
+		if (GammodMult.getMult(buttons[selected_button].assigned_mod) == null)
+		{
+			intended_option_color = 0xFFFF0000;
+		}
+		else
+		{
+			if (!advice) intended_option_color = 0xFF66ffff;
 		}
 		for (button in buttons)
 		{
@@ -730,79 +1790,709 @@ class GammodMenu extends MusicBeatSubState
 		}
 		if (FlxG.sound.music != null)
 		{
-			FlxG.sound.music.pitch = ModuleHandler.getModule('GammodMod_PlaybackRate').value;
+			if (ModuleHandler.getModule('GammodPlaybackRate') != null) FlxG.sound.music.pitch = ModuleHandler.getModule('GammodPlaybackRate').value;
 		}
-		if (!Std.is(buttons[selected_button].assigned_mod.value, Int) || !Std.is(buttons[selected_button].assigned_mod.value, Float))
+		if (!advice)
 		{
-			switch (buttons[selected_button].assigned_mod.value)
+			var prefix: GammodMorpheme = buttons[selected_button].assigned_mod.prefix ?? '';
+			var prefix_result: String = '';
+			if (prefix != null)
 			{
-				case (false):
-					optionTxt.text = 'DISABLED';
-				case (true):
-					optionTxt.text = 'ACTIVE';
-				default:
-					optionTxt.text = buttons[selected_button].assigned_mod.value;
+				prefix_result = prefix.shape;
+				if (!prefix.at_default && ModuleHandler.getModule('GammodModifierHandler').checkDefault(buttons[selected_button].assigned_mod)) prefix_result = '';
 			}
+
+			var suffix: GammodMorpheme = buttons[selected_button].assigned_mod.suffix ?? '';
+			var suffix_result: String = '';
+			if (suffix != null)
+			{
+				suffix_result = suffix.shape;
+				if (!suffix.at_default && ModuleHandler.getModule('GammodModifierHandler').checkDefault(buttons[selected_button].assigned_mod)) suffix_result = '';
+			}
+			if (!Std.is(buttons[selected_button].assigned_mod.value, Int) || !Std.is(buttons[selected_button].assigned_mod.value, Float))
+			{
+				switch (buttons[selected_button].assigned_mod.value)
+				{
+					case (false):
+						optionTxt.text = 'DISABLED';
+					case (true):
+						optionTxt.text = 'ACTIVE';
+					default:
+						trace(buttons[selected_button].assigned_mod.value);
+						optionTxt.text = (prefix_result ?? '') + Std.string(buttons[selected_button].assigned_mod.value) + (suffix_result ?? '');
+				}
+			}
+			else
+			{
+				optionTxt.text = (prefix_result ?? '') + buttons[selected_button].assigned_mod.value + (suffix_result ?? '');
+			}
+		}
+		scale_options_multiplier = optionTxt.width > 510 ? 510 / optionTxt.width : 1;
+		if (!from_freeplay)
+		{
+			optionTxt.scale.set(scale_options_multiplier + 0.3, scale_options_multiplier - 0.4);
+			Tweens.cancel('juice_optionTxt');
+			Tweens.tween(
+				'juice_optionTxt',
+				optionTxt.scale,
+				{ x: scale_options_multiplier, y: scale_options_multiplier },
+				0.2,
+				0,
+				'circOut'
+			);
 		}
 		else
 		{
-			optionTxt.text = buttons[selected_button].assigned_mod.value;
+			optionTxt.scale.set(scale_options_multiplier, scale_options_multiplier);
 		}
-		optionTxt.x = (FlxG.width - optionTxt.width) - 5;
-		multiplierNum.text = '1.0';
-		multiplierNum.x = (FlxG.width - multiplierNum.width) - 15;
+		optionTxt.x = (optionsTxt_center - (optionTxt.width / 2)) + screen_elemets_offset;
+		
+		ModuleHandler.getModule('GammodMult').calcMult();
+		if (ModuleHandler.getModule('GammodMult').score_multiplier != ModuleHandler.getModule('GammodMult').pre_score_multiplier && !unranked_text)
+		{
+			juiceMult();
+			multiplierNum.text = ModuleHandler.getModule('GammodMult').score_multiplier;
+			if (Math.floor(ModuleHandler.getModule('GammodMult').score_multiplier) == ModuleHandler.getModule('GammodMult').score_multiplier)
+			{
+				multiplierNum.text = multiplierNum.text + '.0';
+			}
+		}
+		multiplierNum.x = ((multScreen.x + (multScreen.width / 2) - (multiplierNum.width / 2)) + 77);
+		multiplierNumGlow.x = multiplierNum.x;
+
+		if (!advice)
+		{
+			leftSelectorArrow.setColor(0xFF66FFFF);
+			rightSelectorArrow.setColor(0xFF66FFFF);
+		}
+
+		if (advice) 
+		{
+			optionTxt.scale.set(scale_options_multiplier, scale_options_multiplier);
+			optionTxt.borderColor = 0xFF000000;
+		}
+		
+		var previous_show_tip:Bool = show_tip;
+		if (!buttons[selected_button].currently_default)
+		{
+			if (lightsTimer == null)
+			{
+				lightsTimer = FlxTimer.loop
+				(
+					0.4, 
+					()->
+					{
+						//FunkinSound.playOnce(Paths.sound('lights' + (lightsOn.alpha == 0 ? 'On' : 'Off')));
+						lightsOn.alpha = (lightsOn.alpha == 0 ? 1 : 0);
+					},
+					0
+				);
+			}
+			show_tip = buttons[selected_button].assigned_mod.pre_default != null;
+		}
+		else
+		{
+			show_tip = false;
+			if (lightsTimer != null) 
+			{
+				lightsTimer.destroy();
+				lightsTimer = null;
+			}
+			lightsOn.alpha = 0;
+		}
+
+		if (from_freeplay) needs_unranked = true;
+		else ModuleHandler.getModule('GammodMult').unranked ? showUnranked() : hideUnranked();
+
+		if (show_tip == previous_show_tip) return; // blud can't spend a day without making a "previous_" prefixed variable 🙏
+		if (show_tip)
+		{
+			Tweens.cancel('move_tipTxt');
+			Tweens.tween(
+				'move_tipTxt',
+				tipTxt,
+				{ y: optionsScreen.height + 10, alpha: 0.7 },
+				0.2,
+				0,
+				'quintOut'
+			);
+		}
+		else
+		{
+			Tweens.cancel('move_tipTxt');
+			Tweens.tween(
+				'move_tipTxt',
+				tipTxt,
+				{ y: 0, alpha: 0 },
+				0.2,
+				0,
+				'quadOut'
+			);
+		}
 	}
 
 	public override function update(elapsed:Float)
 	{
 		super.update(elapsed);
 
-		if (arrow_hover)
+		/*if (ModuleHandler.getModule('GammodMult').unranked && !showing_unranked)
 		{
-			if (arrow_counter + (elapsed * 10) < arrow_interval)
+			showing_unranked = true;
+			unranked_text = false;
+			if (unrankedTimer != null)
 			{
-				arrow_counter += elapsed * 10;
+				unrankedTimer.cancel();
+				unrankedTimer.destroy();
+				unrankedTimer = null;
 			}
-			else
-			{
-				arrow_counter = (arrow_counter + elapsed) - arrow_interval;
-			}
-
-			if (arrow_counter % 4 < 3)
-			{
-				selectedArrow.x = -20;
-			}
-			else
-			{
-				selectedArrow.x = -10;
-			}
+			unrankedTimer = FlxTimer.loop
+			(
+				1,
+				()->
+				{
+					if (!unranked_text)
+					{
+						unranked_text = true;
+						multiplierNum.text = 'UNRANKED';
+						multiplierNumGlow.text = 'UNRANKED';
+						multiplierNumGlow.color = 0xFFFF0000;
+					}
+					else
+					{
+						unranked_text = false;
+						multiplierNum.text = ModuleHandler.getModule('GammodMult').score_multiplier;
+						multiplierNumGlow.text = ModuleHandler.getModule('GammodMult').score_multiplier;
+						multiplierNumGlow.color = 0xFF66ffff;
+						if (Math.floor(ModuleHandler.getModule('GammodMult').score_multiplier) == ModuleHandler.getModule('GammodMult').score_multiplier)
+						{
+							multiplierNum.text = multiplierNum.text + '.0';
+						}
+					}
+					multiplierNum.x = (multScreen.x + (multScreen.width / 2) - (multiplierNum.width / 2)) + 77;
+					multiplierNumGlow.x = multiplierNum.x;
+					juiceMult();
+				},
+				0
+			);
 		}
+		else if (!ModuleHandler.getModule('GammodMult').unranked && showing_unranked)
+		{
+			showing_unranked = false;
+			unranked_text = false;
+			if (unrankedTimer != null)
+			{
+				unrankedTimer.cancel();
+				unrankedTimer.destroy();
+				unrankedTimer = null;
+			}
+			unranked_text = false;
+			multiplierNum.text = ModuleHandler.getModule('GammodMult').score_multiplier;
+			multiplierNumGlow.text = ModuleHandler.getModule('GammodMult').score_multiplier;
+			multiplierNumGlow.color = 0xFF66ffff;
+			if (Math.floor(ModuleHandler.getModule('GammodMult').score_multiplier) == ModuleHandler.getModule('GammodMult').score_multiplier)
+			{
+				multiplierNum.text = multiplierNum.text + '.0';
+			}
+			multiplierNum.x = (multScreen.x + (multScreen.width / 2) - (multiplierNum.width / 2)) + 77;
+			multiplierNumGlow.x = multiplierNum.x;
+		}*/
+
+		multLight.x = multScreen.x + 22;
+		multLight.y = multScreen.y - 15;
+
+		if (!showing_multLight && (GammodMult.curMult() != 1.0))
+		{
+			showing_multLight = true;
+			multLight.visible = true;
+			multLight.anim.play('shock', true);
+			FunkinSound.playOnce(Paths.sound('multSpark'));
+		}
+		else if (showing_multLight && (GammodMult.curMult() == 1.0))
+		{
+			showing_multLight = false;
+			multLight.anim.play('shock', true, true);
+			FunkinSound.playOnce(Paths.sound('multSparkGo'));
+		}
+
+		if (textWriteTimer != null && !textWriteTimer.active)
+		{
+			if (funTxt.text != desc_content) funTxt.text = desc_content;
+			writing_animation = false;
+		}
+
+		multiplierNum.shader.update(elapsed);
+
+		//bg.shader.update(elapsed, extraSpeed, introProgress);
+
+		optionTxt.borderColor = borderColor.color;
+
+		multiplierNumGlow.text = multiplierNum.text;
+
+		selectedArrow.y = buttons[selected_button].y + 28;
+
+		leftArrowHitbox.x = leftSelectorArrow.members[0].x - hitbox_amplitude;
+		leftArrowHitbox.y = leftSelectorArrow.members[0].y - hitbox_amplitude;
+		leftArrowHitbox.makeGraphic(leftSelectorArrow.members[0].width+(hitbox_amplitude * 2), leftSelectorArrow.members[0].height+(hitbox_amplitude * 2), FlxColor.TRANSPARENT);
+
+		rightArrowHitbox.x = rightSelectorArrow.members[0].x - hitbox_amplitude;
+		rightArrowHitbox.y = rightSelectorArrow.members[0].y - hitbox_amplitude;
+		rightArrowHitbox.makeGraphic(rightSelectorArrow.members[0].width+(hitbox_amplitude * 2), rightSelectorArrow.members[0].height+(hitbox_amplitude * 2), FlxColor.TRANSPARENT);
+
+		optionsSliderHitbox.x = leftSelectorArrow.members[0].x + leftSelectorArrow.members[0].width;
+		optionsSliderHitbox.y = 0;
+		optionsSliderHitbox.makeGraphic(500, 130, FlxColor.TRANSPARENT);
+
+		resetModsHitbox.x = FlxG.width - 130;
+		resetModsHitbox.y = 0;
+		resetModsHitbox.makeGraphic(130, 130, FlxColor.TRANSPARENT);
 
 		for (button in buttons)
 		{
-			button.update();
+			button.update(elapsed);
 		}
 
 		final wheelAmount:Float = FlxG.mouse.wheel / 8;
 		if (wheelAmount != 0)
 		{
-			selectButton(FlxMath.wrap(selected_button + (wheelAmount > 0 ? -1 : 1), 0, buttons.length - 1));
+			if (FlxG.keys.pressed.CONTROL)
+			{
+				switchCurrentOption(wheelAmount > 0 ? true : false);
+				return;
+			}
+			if (allow_input) selectButton(FlxMath.wrap(selected_button + (wheelAmount > 0 ? -1 : 1), 0, buttons.length - 1));
 		}
 
 		if (allow_input)
 		{
+			var isMobile:Bool = Gammod.mobile();
+
+			var leftPress = isMobile ? controls.get_UI_LEFT_P() || (TouchUtil.justPressed && TouchUtil.overlaps(leftArrowHitbox, camera)) : controls.get_UI_LEFT_P();
+			var rightPress = isMobile ? controls.get_UI_RIGHT_P() || (TouchUtil.justPressed && TouchUtil.overlaps(rightArrowHitbox, camera)) : controls.get_UI_RIGHT_P();
+			var leftRelease = isMobile ? controls.get_UI_LEFT_R() || (TouchUtil.justReleased && TouchUtil.overlaps(leftArrowHitbox, camera)) : controls.get_UI_LEFT_R();
+			var rightRelease = isMobile ? controls.get_UI_RIGHT_R() || (TouchUtil.justReleased && TouchUtil.overlaps(rightArrowHitbox, camera)) : controls.get_UI_RIGHT_R();
+			var upPress = controls.get_UI_UP_P();
+			var downPress = controls.get_UI_DOWN_P();
+			var upRelease = controls.get_UI_UP_R();
+			var downRelease = controls.get_UI_DOWN_R();
+
+			var leftHold = isMobile ? controls.get_UI_LEFT() || (TouchUtil.pressed && TouchUtil.overlaps(leftArrowHitbox, camera)) : controls.get_UI_LEFT();
+			var rightHold = isMobile ? controls.get_UI_RIGHT() || (TouchUtil.pressed && TouchUtil.overlaps(rightArrowHitbox, camera)) : controls.get_UI_RIGHT();
+			var doHoldLeft = leftHold && !rightFirst;
+			var upHold = controls.get_UI_UP();
+			var doHoldUp = upHold && !downFirst;
+			var downHold = controls.get_UI_DOWN();
+			var controlPress = isMobile ? FlxG.keys.justPressed.CONTROL || (TouchUtil.justPressed && TouchUtil.overlaps(optionsSliderHitbox, camera)) : FlxG.keys.justPressed.CONTROL;
+			
+			leftSelectorArrow.update(leftHold, elapsed);
+			rightSelectorArrow.update(rightHold, elapsed);
+			
+			if ((FlxG.android != null && (FlxG.android.justReleased.BACK)) || (Gammod.mobile() && (TouchUtil.pressAction() && TouchUtil.overlaps(backButton))))
+			{
+				goToFreeplay();
+				return;
+			}
 			switch (true)
 			{
-				case (controls.get_UI_UP_P()): 
-					selectButton(FlxMath.wrap(selected_button - 1, 0, buttons.length - 1));
-				case (controls.get_UI_DOWN_P()):
-					selectButton(FlxMath.wrap(selected_button + 1, 0, buttons.length - 1));
-				case (controls.get_UI_LEFT_P()):
-					switchCurrentOption(false);
-				case (controls.get_UI_RIGHT_P()):
-					switchCurrentOption(true);
-				case controls.get_BACK(), FlxG.keys.justPressed.SHIFT:
-					goToFreeplay();
+				case (controlPress):
+					if (doubleClickTimer != null) 
+					{
+						doubleClickTimer.destroy();
+						doubleClickTimer = null;
+						HapticUtil.vibrate(0.01, 0.02, 0.2);
+						screenCam.shake(0.01,0.1);
+						var mod = buttons[selected_button];
+						mod.removeOn(true);
+						
+						if (mod.assigned_mod.pre_default != null)
+						{
+							mod.assigned_mod.value = mod.assigned_mod.pre_default;
+						}
+						else
+						{
+							if (mod.assigned_mod.type == GammodModType.SWITCH)
+							{
+								mod.assigned_mod.value = mod.assigned_mod.default_value;
+							}
+							else
+							{
+								mod.assigned_mod.value = mod.assigned_mod.default_value;
+							}
+						}
+						saveValue();
+						refreshCurrentOption();
+						renderAnimation();
+					}
+					else
+					{
+						doubleClickTimer = new FlxTimer().start
+						(
+							isMobile ? 0.5 : 0.35,
+							()->
+							{
+								doubleClickTimer.destroy();
+								doubleClickTimer = null;
+							}
+						);
+					}
+				case (SwipeUtil.swipeUp):
+					if (!TouchUtil.overlaps(modifiersHitboxLeft, camera) && !TouchUtil.overlaps(modifiersHitboxDown, camera)) return;
+					selectButton(FlxMath.bound(selected_button - 1, 0, buttons.length - 1));
+				case (SwipeUtil.swipeDown):
+					if (!TouchUtil.overlaps(modifiersHitboxLeft, camera) && !TouchUtil.overlaps(modifiersHitboxDown, camera)) return;
+					selectButton(FlxMath.bound(selected_button + 1, 0, buttons.length - 1));
+				case (SwipeUtil.swipeLeft):
+					if (!TouchUtil.overlaps(optionsSliderHitbox, camera)) return;
+					HapticUtil.vibrate(0.15, 0.01, 0.06);
+					switchCurrentOption(true, FlxG.keys.pressed.CONTROL);
+				case (SwipeUtil.swipeRight):
+					if (!TouchUtil.overlaps(optionsSliderHitbox, camera)) return;
+					HapticUtil.vibrate(0.15, 0.01, 0.06);
+					switchCurrentOption(false, FlxG.keys.pressed.CONTROL);
+				case (leftPress):
+					rightFirst = false;
+					HapticUtil.vibrate(0.1, 0.02, 0.16);
+					switchCurrentOption(false, FlxG.keys.pressed.CONTROL);
+					manageHoldTimer(true);
+				case (rightPress):
+					rightFirst = true;
+					HapticUtil.vibrate(0.1, 0.02, 0.16);
+					switchCurrentOption(true, FlxG.keys.pressed.CONTROL);
+					manageHoldTimer(true);
+				case (leftRelease):
+					manageHoldTimer(false);
+				case (rightRelease):
+					manageHoldTimer(false);
+				case (upPress):
+					downFirst = false;
+					manageHoldTimer(true);
+					if (!FlxG.keys.pressed.CONTROL)
+					{
+						selectButton(FlxMath.wrap(selected_button - 1, 0, buttons.length - 1));
+					}
+					else
+					{
+						selectButton(0);
+					}
+				case (downPress):
+					downFirst = true;
+					manageHoldTimer(true);
+					if (!FlxG.keys.pressed.CONTROL)
+					{
+						selectButton(FlxMath.wrap(selected_button + 1, 0, buttons.length - 1));
+					}
+					else
+					{
+						selectButton(buttons.length-1);
+					}
+				case (upRelease):
+					manageHoldTimer(false);
+				case (downRelease):
+					manageHoldTimer(false);
+				case (doHoldUp):
+					if (justHeld)
+					{
+						justHeld = false;
+						selectButton(FlxMath.wrap(selected_button - 1, 0, buttons.length - 1));
+					}
+				case (downHold):
+					if (justHeld)
+					{
+						justHeld = false;
+						selectButton(FlxMath.wrap(selected_button + 1, 0, buttons.length - 1));
+					}
+				case (doHoldLeft):
+					if (justHeld)
+					{
+						justHeld = false;
+						switchCurrentOption(false, false);
+					}
+				case (rightHold):
+					if (justHeld)
+					{
+						justHeld = false;
+						switchCurrentOption(true, false);
+					}
+				case (FlxG.keys.justPressed.HOME):
+					selectButton(0);
+				case (FlxG.keys.justPressed.END):
+					selectButton(buttons.length-1);
+				case (can_exit):
+					if (controls.get_BACK() || GammodControls.justPressed('modifiers'))
+					{
+						goToFreeplay();
+					}
+			}
+		}
+		var resetCondition = Gammod.mobile() ? FlxG.keys.justPressed.TAB || (TouchUtil.justPressed && TouchUtil.overlaps(resetModsHitbox, camera)) : FlxG.keys.justPressed.TAB;
+		var resetCancelCondition = Gammod.mobile() ? FlxG.keys.justReleased.TAB || (TouchUtil.justReleased) : FlxG.keys.justReleased.TAB;
+		switch (true)
+		{
+			case resetCondition:
+				if (transitioningOut) return;
+				allow_input = false;
+				disableModsOn.color = 0xFFFFFFFF;
+
+				Tweens.cancel('decelerate_upBackdrop');
+				Tweens.cancel('decelerate_downBackdrop');
+
+				if (focusSound.isPlaying) focusSound.pause();
+				focusSound.volume = 0;
+				focusSound.play(3 * Math.abs((disableModsOn.clipRect.height / disableModsOff.height) - 1));
+				Tweens.cancel('fade_focusSound');
+				Tweens.tween(
+					'fade_focusSound',
+					focusSound,
+					{ volume: 1 },
+					0.05,
+					0,
+					'linear'
+				);
+
+				if (disableModsProgress != null) disableModsProgress.cancel();
+				Tweens.cancel('focus_focusTint');
+				Tweens.tween(
+					'focus_focusTint',
+					focusTint,
+					{ alpha: 0.8 },
+					3 * Math.abs((disableModsOn.clipRect.height / disableModsOff.height) - 1),
+					0,
+					'linear'
+				);
+				Tweens.cancel('focus_backdropCamera');
+				Tweens.tween(
+					'focus_backdropCamera',
+					backdropCamera,
+					{ zoom: 1.1 },
+					3 * Math.abs((disableModsOn.clipRect.height / disableModsOff.height) - 1),
+					0,
+					'quadIn'
+				);
+				Tweens.cancel('focus_backgroundCamera');
+				Tweens.tween(
+					'focus_backgroundCamera',
+					backgroundCamera,
+					{ zoom: 1.1 },
+					3 * Math.abs((disableModsOn.clipRect.height / disableModsOff.height) - 1),
+					0,
+					'quadIn'
+				);
+				Tweens.cancel('focus_camera');
+				Tweens.tween(
+					'focus_camera',
+					FlxG.state.subState.funnyCam,
+					{ zoom: 1.2 },
+					3 * Math.abs((disableModsOn.clipRect.height / disableModsOff.height) - 1),
+					0,
+					'quadIn'
+				);
+				Tweens.cancel('fade_music');
+				Tweens.tween(
+					'fade_music',
+					FlxG.sound.music,
+					{ volume: 0.2 },
+					3 * Math.abs((disableModsOn.clipRect.height / disableModsOff.height) - 1),
+					0,
+					'linear'
+				);
+				disableModsProgress = FlxTween.num
+				(
+					disableModsOn.clipRect.height,
+					disableModsOff.height,
+					3 * Math.abs((disableModsOn.clipRect.height / disableModsOff.height) - 1),
+					{
+						onComplete: () ->
+						{
+							if (focusSound.isPlaying) focusSound.pause();
+							FunkinSound.playOnce(Paths.sound('resetModsDone'));
+							FlxG.sound.music.volume = 1;
+							screenCam.shake(0.01,0.2);
+							HapticUtil.vibrate(1, 0.5, 0.27);
+							upperBackdropTxt.velocity.x = 20;
+							bottomBackdropTxt.velocity.x = -20;
+							Tweens.cancel('focus_backgroundCamera');
+							Tweens.tween(
+								'focus_backgroundCamera',
+								backgroundCamera,
+								{ zoom: 1 },
+								0.3,
+								0,
+								'circOut'
+							);
+							Tweens.cancel('focus_backdropCamera');
+							Tweens.tween(
+								'focus_backdropCamera',
+								backdropCamera,
+								{ zoom: 1 },
+								0.3,
+								0,
+								'circOut'
+							);
+
+							var current_button: Int = 0;
+							for (mod in buttons)
+							{
+								mod.removeOn(true);
+								if (mod.assigned_mod.type == GammodModType.SWITCH)
+								{
+									mod.assigned_mod.value = mod.assigned_mod.pre_default != null ? mod.assigned_mod.pre_default : mod.assigned_mod.default_value;
+								}
+								else
+								{
+									mod.assigned_mod.value = mod.assigned_mod.pre_default != null ? mod.assigned_mod.pre_default : mod.assigned_mod.default_value;
+								}
+								saveValue(current_button);
+								current_button += 1;
+							}
+
+							refreshCurrentOption();
+							renderAnimation();
+							Tweens.cancel('focus_focusTint');
+							Tweens.tween(
+								'focus_focusTint',
+								focusTint,
+								{ alpha: 0 },
+								0.1,
+								0,
+								'circOut'
+							);
+							Tweens.cancel('focus_camera');
+							Tweens.tween(
+								'focus_camera',
+								FlxG.state.subState.funnyCam,
+								{ zoom: 1 },
+								0.1,
+								0,
+								'circOut'
+							);
+							disableModsOn.clipRect = new FlxRect(0, 0, disableModsOn.width, 0);
+						}
+					},
+					(value) ->
+					{
+						upperBackdropTxt.velocity.x = 20 * FlxMath.bound(value, 1, null);
+						bottomBackdropTxt.velocity.x = -20 * FlxMath.bound(value, 1, null);
+						disableModsOn.clipRect = new FlxRect(0, 0, disableModsOn.width, FlxMath.remapToRange(value, 0, disableModsOff.height, 13, disableModsOff.height-12));
+					}
+				);
+			case resetCancelCondition:
+				if (disableModsOn.clipRect.height < 30 && disableModsOn.clipRect.height != 0)
+				{
+					Tweens.cancel('recolor_arrowOffRight');
+					Tweens.cancel('recolor_arrowOnRight');
+					Tweens.cancel('recolor_arrowOffLeft');
+					Tweens.cancel('recolor_arrowOnLeft');
+					Tweens.cancel('recolor_optionTxt');
+					Tweens.cancel('recolor_optionTxt2');
+					Tweens.cancel('recolor_optionTxt3');
+					
+					optionTxt.text = 'HOLD THE BUTTON';
+					optionTxt.color = 0xFFFF0000;
+					borderColor.color = 0xFF000000;
+					screenCam.shake(0.01,0.2);
+					refreshCurrentOption(false, true);
+					HapticUtil.vibrate(0.01, 0.02, 0.27);
+
+					leftSelectorArrow.setColor(0xFF660000);
+					rightSelectorArrow.setColor(0xFF660000);
+
+					FunkinSound.playOnce(Paths.sound('resetModsError'));
+				}
+
+				if (!transitioningOut) allow_input = true;
+				disableModsOn.color = 0xFFAAAAAA;
+
+				if (focusSound.isPlaying) focusSound.pause();
+				focusSound.volume = 0;
+
+				upperBackdropTxt.velocity.x = 20;
+				bottomBackdropTxt.velocity.x = -20;
+
+				if (disableModsProgress != null) disableModsProgress.cancel();
+				Tweens.cancel('focus_focusTint');
+				Tweens.tween(
+					'focus_focusTint',
+					focusTint,
+					{ alpha: 0 },
+					0.1,
+					0,
+					'circOut'
+				);
+				Tweens.cancel('focus_backgroundCamera');
+				Tweens.tween(
+					'focus_backgroundCamera',
+					backgroundCamera,
+					{ zoom: 1 },
+					0.3,
+					0,
+					'circOut'
+				);
+				Tweens.cancel('focus_backdropCamera');
+				Tweens.tween(
+					'focus_backdropCamera',
+					backdropCamera,
+					{ zoom: 1 },
+					0.3,
+					0,
+					'circOut'
+				);
+				Tweens.cancel('focus_camera');
+				Tweens.tween(
+					'focus_camera',
+					FlxG.state.subState.funnyCam,
+					{ zoom: 1 },
+					0.1,
+					0,
+					'circOut'
+				);
+				disableModsOn.clipRect = new FlxRect(0, 0, disableModsOn.width, 0);
+				Tweens.cancel('fade_music');
+				FlxG.sound.music.volume = 1;
+		}
+	}
+
+	private function manageHoldTimer(on:Bool):Void
+	{
+		if (on)
+		{
+			justHeld = false;
+			if (holdTimer != null) 
+			{
+				holdTimer.cancel();
+				holdTimer.destroy();
+				holdTimer = null;
+			}
+			if (holdingLoop != null) 
+			{
+				holdingLoop.cancel();
+				holdingLoop.destroy();
+				holdingLoop = null;
+			}
+			holdTimer = new FlxTimer().start
+			(
+				0.5,
+				()->
+				{
+					holdTimer.destroy();
+					holdTimer = null;
+					holdingLoop = FlxTimer.loop
+					(
+						0.07,
+						()->
+						{
+							justHeld = true;
+						}
+					);
+				}
+			);
+		}
+		else
+		{
+			justHeld = false;
+			if (holdingLoop != null) 
+			{
+				holdingLoop.cancel();
+				holdingLoop.destroy();
+				holdingLoop = null;
 			}
 		}
 	}
@@ -811,45 +2501,136 @@ class GammodMenu extends MusicBeatSubState
 	{
 		trace('Closing the menu has been requested. Beginning transition.');
 
-		allow_input = false;
-		arrow_hover = false;
+		transitioningIn = false;
 
-		ModuleHandler.getModule('FukkitTweenManager').cancel('moveTrans_selectedArrow');
-		ModuleHandler.getModule('FukkitTweenManager').tween(
-			'moveTrans_selectedArrow',
-			selectedArrow,
-			{ x: -100, alpha: 0 },
-			0.2,
+		FlxG.state.subState.persistentDraw = true;
+
+		if (Gammod.mobile() && backButton != null) backButton.enabled = false;
+		allow_input = false;
+		transitioningOut = true;
+		arrow_hover = false;
+		can_write_desc = false;
+
+		bg.cameras = [FlxG.state.subState.funnyCam];
+
+		backdropCamera.alpha = 0;
+		bg.color = 0xFFFFFFFF;
+		Tweens.cancel('flash_bg');
+		Tweens.cancel('fade_bg');
+		Tweens.tween(
+			'fade_bg',
+			bg,
+			{ alpha: 0 },
+			0.3,
 			0,
-			'quadOut'
+			'sineOut'
+		);
+		Tweens.cancel('fadeIn_transitionTint');
+		Tweens.tween(
+			'fadeIn_transitionTint',
+			transitionTint,
+			{ alpha: 0.5 },
+			0.3,
+			0,
+			'sineOut'
 		);
 
-		ModuleHandler.getModule('FukkitTweenManager').cancel('moveTrans_bottomBand');
-		ModuleHandler.getModule('FukkitTweenManager').tween(
+		hideUnranked();
+
+		if (ModuleHandler.getModule('GammodFreeplayModule').multCard.multTxt.alpha == 0) ModuleHandler.getModule('GammodFreeplayModule').multCard;
+		ModuleHandler.getModule('GammodFreeplayModule').updateModCount();
+
+		//ModuleHandler.getModule('GammodFreeplayModule').modifyMenu(!ModuleHandler.getModule('GammodModifierHandler').updateModsOn());
+
+		Tweens.cancel('fade_transitionTint');
+		Tweens.tween(
+			'fade_transitionTint',
+			transitionTint,
+			{ alpha: 0 },
+			0.3,
+			0.4,
+			'sineOut'
+		);
+
+		Tweens.cancel('moveTrans_bottomBand');
+		Tweens.tween(
 			'moveTrans_bottomBand',
 			bottomBand,
+			{ y: FlxG.height + (multScreen.height - 10) },
+			0.3,
+			0,
+			'sineIn'
+		);
+
+		Tweens.cancel('moveTrans_funTxt');
+		Tweens.tween(
+			'moveTrans_funTxt',
+			funTxt,
+			{ y: FlxG.height + (FlxG.height-bottomBand.y) },
+			0.3,
+			0,
+			'sineIn'
+		);
+
+		Tweens.cancel('moveTrans_descBorder');
+		Tweens.tween(
+			'moveTrans_descBorder',
+			descBorder,
+			{ y: FlxG.height + (multScreen.height - 10) },
+			0.3,
+			0,
+			'sineIn'
+		);
+
+		Tweens.cancel('move_selectedArrow');
+		Tweens.tween(
+			'move_selectedArrow',
+			selectedArrow,
+			{ x: -200 },
+			0.2,
+			0.33,
+			'circIn',
+			'oneshot',
+			function ()
+			{
+				arrow_hover = true;
+			}
+		);
+
+		Tweens.cancel('appear_multScreen');
+		Tweens.tween(
+			'appear_multScreen',
+			multScreen,
 			{ y: FlxG.height },
 			0.3,
 			0,
 			'sineIn'
 		);
 
-		ModuleHandler.getModule('FukkitTweenManager').cancel('appear1x_multiplierNum');
-		ModuleHandler.getModule('FukkitTweenManager').cancel('appear1y_multiplierNum');
-		ModuleHandler.getModule('FukkitTweenManager').cancel('appear2_multiplierNum');
-		ModuleHandler.getModule('FukkitTweenManager').tween(
-			'appear_multiplierNum',
+		Tweens.cancel('appear_multNum');
+		Tweens.tween(
+			'appear_multNum',
 			multiplierNum,
-			{ y: FlxG.height + multiplierNum.height },
+			{ y: FlxG.height + 11 },
 			0.3,
 			0,
-			'circIn'
+			'sineIn'
 		);
 
-		ModuleHandler.getModule('FukkitTweenManager').cancel('appear1x_optionTxt');
-		ModuleHandler.getModule('FukkitTweenManager').cancel('appear1y_optionTxt');
-		ModuleHandler.getModule('FukkitTweenManager').cancel('appear2_optionTxt');
-		ModuleHandler.getModule('FukkitTweenManager').tween(
+		Tweens.cancel('appear_multNumGlow');
+		Tweens.tween(
+			'appear_multNumGlow',
+			multiplierNumGlow,
+			{ y: FlxG.height + 11 },
+			0.3,
+			0,
+			'sineIn'
+		);
+
+		Tweens.cancel('appear1x_optionTxt');
+		Tweens.cancel('appear1y_optionTxt');
+		Tweens.cancel('appear2_optionTxt');
+		Tweens.tween(
 			'appear_optionTxt',
 			optionTxt,
 			{ y: -100 },
@@ -858,8 +2639,20 @@ class GammodMenu extends MusicBeatSubState
 			'quadIn'
 		);
 
-		ModuleHandler.getModule('FukkitTweenManager').cancel('moveTrans_sideBar');
-		ModuleHandler.getModule('FukkitTweenManager').tween(
+		if (slideLapTimer != null) 
+		{
+			slideLapTimer.cancel();
+			slideLapTimer.destroy();
+		}
+		if (unrankedBumpTimer != null)
+		{
+			unrankedBumpTimer.cancel();
+			unrankedBumpTimer.destroy();
+			unrankedBumpTimer = null;
+		}
+
+		Tweens.cancel('moveTrans_sideBar');
+		Tweens.tween(
 			'moveTrans_sideBar',
 			sideBar,
 			{ x: -sideBar.width },
@@ -868,8 +2661,46 @@ class GammodMenu extends MusicBeatSubState
 			'quintIn'
 		);
 
-		ModuleHandler.getModule('FukkitTweenManager').cancel('moveTrans_topBand');
-		ModuleHandler.getModule('FukkitTweenManager').tween(
+		/*Tweens.cancel('slide_mods');
+		Tweens.cancel('slide_modsB');
+		Tweens.tween(
+			'slide_mods',
+			sideTextMods,
+			{ x: -sideTextMods.width },
+			0.45,
+			0,
+			'quintIn'
+		);
+		Tweens.tween(
+			'slide_modsB',
+			sideTextModsB,
+			{ x: -sideTextModsB.width },
+			0.45,
+			0,
+			'quintIn'
+		);
+
+		Tweens.cancel('slide_play');
+		Tweens.cancel('slide_playB');
+		Tweens.tween(
+			'slide_play',
+			sideTextPlay,
+			{ x: -sideTextPlay.width },
+			0.45,
+			0,
+			'quintIn'
+		);
+		Tweens.tween(
+			'slide_playB',
+			sideTextPlayB,
+			{ x: -sideTextPlayB.width },
+			0.45,
+			0,
+			'quintIn'
+		);*/
+
+		Tweens.cancel('moveTrans_topBand');
+		Tweens.tween(
 			'moveTrans_topBand',
 			topBand,
 			{ y: -topBand.height },
@@ -878,25 +2709,46 @@ class GammodMenu extends MusicBeatSubState
 			'quintIn'
 		);
 
-		ModuleHandler.getModule('FukkitTweenManager').cancel('recolor_overlayBackground');
-		ModuleHandler.getModule('FukkitTweenManager').cancel('fadeTrans_overlayBackground');
-		ModuleHandler.getModule('FukkitTweenManager').cancel('fadeTrans2_overlayBackground');
-		ModuleHandler.getModule('FukkitTweenManager').tween(
-			'fadeTrans_overlayBackground',
-			overlayBackground,
-			{ y: -overlayBackground.height },
+		Tweens.cancel('moveTrans_screenCam');
+		Tweens.tween(
+			'moveTrans_screenCam',
+			screenCam,
+			{ y: -200 },
+			0.6,
+			0,
+			'quintIn'
+		);
+
+		Tweens.cancel('appear_players');
+		Tweens.cancel('diss_a_pear_players');
+		Tweens.tween(
+			'diss_a_pear_players',
+			players,
+			{ y: FlxG.height + 30 },
+			0.5,
+			0.1,
+			'expoIn'
+		);
+
+		Tweens.cancel('recolor_bg');
+		Tweens.cancel('fadeTrans_bg');
+		Tweens.cancel('fadeTrans2_bg');
+		Tweens.tween(
+			'fadeTrans_bg',
+			bg,
+			{ y: -bg.height },
 			0.7,
 			0,
 			'quintIn'
 		);
-		ModuleHandler.getModule('FukkitTweenManager').color(
-			'fadeTrans2_overlayBackground',
-			overlayBackground,
+		/*Tweens.color(
+			'fadeTrans2_bg',
+			bg,
 			0xFF000000,
 			0.7,
 			0,
 			'linear'
-		);
+		);*/
 
 		for (visibleButton in 0...7)
 		{
@@ -919,7 +2771,24 @@ class GammodMenu extends MusicBeatSubState
 				{
 					if (buttons[(visibleButton + (selected_button - 3))] != null)
 					{
-						buttons[(visibleButton + (selected_button - 3))].removeOn();
+						Tweens.cancel('fade_sticker' + buttons[(visibleButton + (selected_button - 3))].ID);
+						Tweens.tween(
+							'fade_sticker' + buttons[(visibleButton + (selected_button - 3))].ID,
+							buttons[(visibleButton + (selected_button - 3))].defaultSticker,
+							{ alpha: 0 },
+							0.1,
+							0,
+							'quadOut'
+						);
+						Tweens.cancel('fade_icon' + buttons[(visibleButton + (selected_button - 3))].ID);
+						Tweens.tween(
+							'fade_icon' + buttons[(visibleButton + (selected_button - 3))].ID,
+							buttons[(visibleButton + (selected_button - 3))].defaultIcon,
+							{ alpha: 0 },
+							0.1,
+							0,
+							'quadOut'
+						);
 					}
 				}
 			);
@@ -930,10 +2799,30 @@ class GammodMenu extends MusicBeatSubState
 			1.0, 
 			()->
 			{
-				ModuleHandler.getModule('GammodStateHandler').remembered_mod_position = selected_button;
+				if (unrankedTimer != null)
+				{
+					unrankedTimer.cancel();
+					unrankedTimer.destroy();
+					unrankedTimer = null;
+				}
+
+				if (shaderTimer != null)
+				{
+					shaderTimer.cancel();
+					shaderTimer.destroy();
+					shaderTimer = null;
+				}
+
+				FlxG.cameras.remove(backgroundCamera);
+				FlxG.cameras.remove(backdropCamera);
+
 	     		super.close();
-				FlxG.sound.music.stop();
+				ModuleHandler.getModule('GammodStateHandler').closeGammodMenu();
+				ModuleHandler.getModule('GammodStateHandler').remembered_mod_position = selected_button;
+				ModuleHandler.getModule('GammodFreeplayModule').mod_menu_open = false;
+				if (FlxG.sound.music != null) FlxG.sound.music.stop();
 				FlxG.state.subState.playCurSongPreview();
+				if (Gammod.mobile()) FlxG.state.subState.backButton.visible = true;
 			}
 		);
 	}

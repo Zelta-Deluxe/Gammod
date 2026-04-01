@@ -1,0 +1,12 @@
+- TO FIX:
+
+· Lists
+	value - does not use lists anymore, just a straight up string
+	type - account for this when checking for indexes (replace default_value[x] with type.values[x])
+	way cleaner!!!
+
+· Switch
+	not a lot changes actually, just check for the type differently
+
+· IntRange / FloatRange
+	they do not longer use lists to define all their bullshit in default_value, just the regular default_value you would set

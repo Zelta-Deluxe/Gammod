@@ -1,0 +1,46 @@
+import funkin.modding.module.Module;
+import funkin.modding.module.ModuleHandler;
+import funkin.play.PlayState;
+import flixel.math.FlxMath;
+import funkin.Conductor;
+import funkin.util.Constants;
+import flixel.FlxSprite;
+import flixel.tweens.FlxTween;
+import gammod.modifiers.GammodModType;
+import gammod.modifiers.GammodPlatform;
+import gammod.util.GammodTweenManager as Tweens;
+import gammod.modifiers.GammodModifier;
+import gammod.options.GammodOptionsModule as GammodOptions;
+import Math;
+
+class GammodStartingHealth extends GammodModifier
+{
+	public function new()
+	{
+		super('GammodStartingHealth', GammodModType.INTRANGE(0, 100, 5), {default_value: 50});
+
+		display_name = 'Starting Health';
+		//prefix = {value='x'; at_default=true; at_pre_default=false;};
+		colors = [0xFF0dff00,0xffff1100];
+		multiplier = {addition: null};
+		description = "THE PERCENTAGE OF HEALTH YOU'LL START WITH";
+		suffix = {shape:'%', at_default:true};
+	}
+
+	override public function onCountdownStart(event:CountdownScriptEvent) 
+	{
+		super.onCountdownStart(event);
+
+		if (isDefault()) return;
+		Tweens.cancel('pumpUp_health');
+		Tweens.tween
+		(
+			'pumpUp_health',
+			PlayState.instance,
+			{ health: FlxMath.bound((value*2)/100, 0.08, Constants.HEALTH_MAX) },
+			1,
+			0.2,
+			'expoOut'
+		);
+	}
+}

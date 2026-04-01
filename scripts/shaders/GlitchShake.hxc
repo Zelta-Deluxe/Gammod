@@ -1,0 +1,65 @@
+package gammod.shaders;
+
+import flixel.addons.display.FlxRuntimeShader;
+import funkin.Assets;
+import funkin.Paths;
+
+class GlitchShake extends FlxRuntimeShader
+{
+	public var uTime:Float = 0;
+	public var shakeRate:Float = 0;
+	public var colorRate:Float = 0;
+
+	public var seed:Int = 0;
+
+	public function new(?seed:Float, colored: Bool = false)
+	{
+		super(Assets.getText(Paths.frag('glitchShake' + (colored ? 'Colored' : ''))));
+
+		this.seed = seed ?? FlxG.random.int(0, 999999);
+
+		this.setFloat('shake_power', 0.06);
+		this.setFloat('shake_rate', 0.2);
+		this.setFloat('shake_speed', 5.0);
+		this.setFloat('shake_block_size', 30.5); // 30.5
+		this.setFloat('shake_color_rate', 0.01); // 0.01
+		this.setFloatArray('tintColor', [1, 1, 1, 1]);
+	}
+
+	public function update(elapsed:Float)
+	{
+		//trace(uTime);
+		uTime += elapsed + seed;
+		this.setFloat('uTime', uTime);
+	}
+
+	public function set_shakeRate(value:Float)
+	{
+		this.setFloat('shake_rate', value);
+	}
+
+	public function set_colorRate(value:Float)
+	{
+		this.setFloat('shake_color_rate', value);
+	}
+
+	public function set_shakePower(value:Float)
+	{
+		this.setFloat('shake_power', value);
+	}
+
+	public function set_color(value:Int)
+	{
+		this.setFloatArray('tintColor', intToVec4A(value));
+	}
+
+	function intToVec4A(color:Int):Array<Float>
+	{
+		var a:Float = ((color >> 24) & 0xFF) / 255.0;
+		var r:Float = ((color >> 16) & 0xFF) / 255.0;
+		var g:Float = ((color >> 8) & 0xFF) / 255.0;
+		var b:Float = (color & 0xFF) / 255.0;
+
+		return [r, g, b, a];
+	}
+}

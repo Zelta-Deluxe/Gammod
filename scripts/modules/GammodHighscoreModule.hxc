@@ -1,0 +1,187 @@
+package gammod.modifiers.highscore;
+
+import funkin.modding.module.Module;
+import funkin.modding.module.ModuleHandler;
+import funkin.play.PlayState;
+import funkin.ui.freeplay.FreeplayState;
+import funkin.save.Save;
+import haxe.ds.StringMap;
+import flixel.FlxG;
+import Std;
+
+/*
+ * Structure that helps storing highscores.
+ * Has a score and a multiplier for that score.
+ */
+typedef GammodHighscore = 
+{
+	var score:Int;
+	var mult:Float;
+}
+
+
+/*
+ * Structure to refer to a specific chart.
+ * `song` is the plain song ID, no variation.
+ * `variation` is the ID of the variation of the song we're referring to.
+ * `difficulty` is the ID of the chart we're playing assigned to the `song` and the selected `variation`.
+ */
+typedef SongPath =
+{
+	var song:String;
+	var variation:String;
+	var difficulty:String;
+}
+
+/*
+ * Structure that helps storing highscores.
+ * Has a score and a multiplier for that score.
+ */
+typedef SaveScoreParams =
+{
+	var highscore:GammodHighscore;
+	var song:SongPath;
+}
+
+class GammodHighscoreModule extends Module
+{
+	/* 
+	This module is dedicated to:
+	registering and saving scores, 
+	and giving easy access to them.
+
+	!!! Remember adding unranked scores support, and making them not save by OG FNF' methods (turn the score to 0 before the song ends).
+	*/
+
+	var lastPlayedSong: SongPath;
+
+	public function new()
+	{
+		super('GammodHighscoreModule');
+	}
+
+	public function wipeScore(?params:SongPath):Void
+	{
+		if (params == null) params = lastPlayedSong;
+		trace('[GAMMOD] (SAVES) Cleaning saved highscore for song "' + params + '"');
+
+		setupSaves();
+		if (params.variation == null) 
+		{
+			Save.instance.getModOptions('Gammod').highscores.remove(params.song); 
+			return;
+		}
+		if (params.difficulty == null) 
+		{
+			Save.instance.getModOptions('Gammod').highscores.remove(params.variation);
+			return;
+		}
+		Save.instance.getModOptions('Gammod').highscores.get(params.song).get(params.variation).remove(params.difficulty);
+	}
+
+	/*
+		Saves a score following some parameters.
+		highscore = A "GammodHighscore" to that contains the data for the highscore.
+			score = The score that was achieved (without applying multiplier).
+			mult = The multiplier applied to the score.
+
+		song = Song data to tell which song we'll save to.
+			song = For which song will the score be saved to.
+			variation = The variation of the song that the score will be saved at.
+			difficulty = The difficulty of the song and its variation that the score will be saved at.
+
+		checkHighscore = If 'true', the score will not be saved if it is inferior (in total) to the current score.
+	*/
+	public function saveScore(?params:SaveScoreParams, ?checkHighscore:Bool = true):Void
+	{
+		if (params.highscore.mult == null) ModuleHandler.getModule('GammodMult').score_multiplier;
+		if (params.highscore.score == null) params.highscore.score = 0;
+		if (params.song.variation == null) params.song.variation = 'default';
+		if (params.song == null)
+		{
+			if (PlayState.instance != null)
+			{
+				params.song = 
+				{
+					song = PlayState.instance.currentSong.id;
+					variation = PlayState.instance.currentVariation;
+					difficulty = PlayState.instance.currentDifficulty;
+				}
+			}
+			else if (FlxG.state.subState is FreeplayState)
+			{
+				params.song = 
+				{
+					song = FlxG.state.subState.currentCapsule.freeplayData.songId;
+					variation = FlxG.state.subState.currentCapsule.freeplayData.currentVariation;
+					difficulty = FlxG.state.subState.currentDifficulty;
+				}
+			}
+			else
+			{
+				trace("[GAMMOD] (ERROR) The game is neither in PlayState nor in FreeplayState, so saveScore() song params can't be assumed.");
+			}
+		}
+
+		setupSaves();
+		var hs = Save.instance.getModOptions('Gammod').highscores;
+		if (hs.get(params.song.song) == null) hs.set(params.song.song, new StringMap());
+		if (hs.get(params.song.song).get(params.song.variation) == null) hs.get(params.song.song).set(params.song.variation, new StringMap());
+		hs.get(params.song.song).get(params.song.variation).set(params.song.difficulty, params.highscore);
+
+		trace('[GAMMOD] (SAVES) Saved highscore for song "' + params.song + '"');
+
+		//This way, I can access a song's highscore like this:
+		//hs['milf']['erect']['nightmare']
+		//hs['spookeez']['pico']['hard']
+	}
+
+	public function setupSaves()
+	{
+		var save = Save.instance.getModOptions('Gammod');
+		if (save.highscores == null) 
+		{
+			save.highscores = new StringMap();
+			trace('[GAMMOD] (SAVES) Initialized "Highscores" save successfully.');
+		}
+	}
+
+	public function getScore(?params:SongPath):Null<GammodHighscore>
+	{
+		trace('[GAMMOD] (SAVES) Getting save for song "' + params + '"');
+
+		setupSaves();
+		var hs = Save.instance.getModOptions('Gammod').highscores;
+		if (hs.get(params.song)?.get(params.variation)?.get(params.difficulty) == null) return null;
+
+		var result = hs.get(params.song).get(params.variation).get(params.difficulty);
+		if (result != null) 
+		{
+			trace('[GAMMOD] (SAVES) Found save with score ' + result.score + ' and mult. ' + result.mult + ', would result in ' + Std.int(result.score * result.mult) );
+		}
+		else
+		{
+			trace('[GAMMOD] (SAVES) No saved scores were found for that song path.');
+		}
+		var internalTally = Save.instance.getSongScore(params.song,params.difficulty,params.variation);
+		if (internalTally?.score != null)
+		{
+			trace('[GAMMOD] (SAVES) Internal score for the song is: ' + internalTally.score);
+		}
+		else
+		{
+			trace('[GAMMOD] (SAVES) No internal score found.');
+		}
+
+		return result;
+	}
+
+	public function buildScore(_score:Int = 0, _mult:Float = 1.0):GammodHighscore
+	{
+		return 
+		{
+			score: _score,
+			mult: _mult
+		};
+	}
+}

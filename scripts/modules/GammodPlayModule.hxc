@@ -1,16 +1,91 @@
+package gammod;
+
 import funkin.modding.module.Module;
 import funkin.util.Constants;
 import funkin.play.PlayState;
+import funkin.play.PlayStatePlaylist;
+import funkin.ui.freeplay.FreeplayState;
+import funkin.audio.FunkinSound;
+import funkin.graphics.FunkinSprite;
 import flixel.FlxSprite;
+import funkin.modding.module.ModuleHandler;
 import flixel.util.FlxColor;
+import funkin.ui.FullScreenScaleMode;
+import flixel.FlxG;
+import flixel.text.FlxText;
+import flixel.util.FlxColor;
+import flixel.text.FlxTextBorderStyle;
+import funkin.save.Save;
+import funkin.Paths;
+import flixel.addons.effects.chainable.FlxEffectSprite;
+import flixel.addons.effects.chainable.FlxRainbowEffect;
+import flixel.addons.effects.chainable.FlxOutlineEffect;
+import funkin.graphics.FunkinAnimationController;
+import animate.FlxAnimate;
+import gammod.modifiers.GammodModifierHandler;
+import gammod.options.GammodOptionsModule as GammodOptions;
+import funkin.graphics.shaders.GaussianBlurShader;
+import Std;
+
+typedef GammodResultsParams =
+{
+	var internalScore:Int; // To resave the original score.
+	var internalSong:SongPath; // The song whose score was modified, so we can resave.
+	var resultingScore:Int; // The score that we did, to show it on the results menu.
+	var modifiedRun:Bool; // If the run was modified of not, so we can choose to override or not.
+}
 
 class GammodPlayModule extends Module
 {
 	var leftHealthBarColor: FlxSprite;
 	var rightHealthBarColor: FlxSprite;
 
-	var leftHealthBarColorFinal: FlxColor = Constants.COLOR_HEALTH_BAR_RED;
-	var rightHealthBarColorFinal: FlxColor = Constants.COLOR_HEALTH_BAR_GREEN;
+	var curMultTxt: FlxText;
+	var curNoRankTxt: FlxText;
+
+	/*
+	 * To check mid-song if you reached the highscore or not so cool events can happen.
+	 */
+	var previous_songScore: Int = 0;
+
+	/*
+	 * Whether GAMMOD will execute cool events mid-song when the player reaches a highscore.
+	 * Disabled by an option and the Perfect Only modifier.
+	 */
+	public var doHighscoreEvents: Bool = true;
+	var didHighscoreEvents: Bool = false;
+
+	public var resultsParams:Null<GammodResultsParams>;
+	public var wasHighscore:Bool = false;
+
+	/*
+	 * The colors the bar will finish at after the tweens.
+	 * You can change these to the color of each side of your bar.
+	 */
+	public var leftHealthBarColorFinal: FlxColor = Constants.COLOR_HEALTH_BAR_RED;
+	public var rightHealthBarColorFinal: FlxColor = Constants.COLOR_HEALTH_BAR_GREEN;
+
+	/*
+		If the healthBar will be redrawn every frame by Gammod or not.
+		If your song messes around with health bar colors mid-song and you want compatibility, you should turn 'false' this value.
+	*/
+	public var healthBarOverride: Bool = true;
+
+	var currentSong:SongPath;
+	var gammodHighscore: GammodHighscore;
+	var gammodMultHighscore: Int;
+	var isGammodHighscore: Bool;
+	var fnfHighscore: Int;
+	var songHighscore: Int;
+
+	public var scoreTxtFX: FlxEffectSprite;
+	public var scoreTxtFXOut: FlxEffectSprite;
+
+	var outlineEffectShi: FlxOutlineEffect;
+
+	var previous_scoreText_text: String = '';
+
+	var song_finished: Bool = false;
 
 	public function new()
 	{
@@ -25,10 +100,281 @@ class GammodPlayModule extends Module
 	}
 
 	override public function onUpdate(event)
-	{
+	{	
 		if (PlayState.instance == null) return;
+		if (PlayStatePlaylist.isStoryMode) return;
+		if (FlxG.keys.justPressed.M) PlayState.instance.endSong();
 
+		if (PlayState.instance.scoreText != null && scoreTxtFX != null)
+		{
+			//trace('changing position shi');
+
+			if (PlayState.instance.scoreText.text != previous_scoreText_text)
+			{
+				outlineEffectShi.dirty = true;
+			}
+
+			scoreTxtFX.x = PlayState.instance.scoreText.x;
+			scoreTxtFX.y = PlayState.instance.scoreText.y;
+			scoreTxtFXOut.x = PlayState.instance.scoreText.x;
+			scoreTxtFXOut.y = PlayState.instance.scoreText.y;
+
+			previous_scoreText_text = PlayState.instance.scoreText.text;
+		}
+
+		if (previous_songScore != PlayState.instance.songScore) // When score changes check if we're reaching a highscore
+		{
+			var multPlayScore: Int = Std.int(PlayState.instance.songScore * ModuleHandler.getModule('GammodMult').score_multiplier);
+			//trace('SCORE CHANGED TO: ' + PlayState.instance.songScore);
+			//trace('didHighscoreEvents = ' + didHighscoreEvents);
+			//trace('(PlayState.instance.songScore >= songHighscore) = ' + (PlayState.instance.songScore >= songHighscore));
+			//trace('PlayState.instance.startingSong = ' + PlayState.instance.startingSong);
+			if ((ModuleHandler.getModule('GammodPerfectOnly').value ?? 'Disabled') == 'Disabled' && GammodOptions.get('highscoreEffects'))
+			{
+				if (!didHighscoreEvents && (multPlayScore >= songHighscore) && !PlayState.instance.startingSong)
+				{
+					didHighscoreEvents = true;
+					highscoreReachedFX();
+				}
+				if (didHighscoreEvents && (multPlayScore <= songHighscore) && !song_finished)
+				{
+					didHighscoreEvents = false;
+					highscoreLostFX();
+				}
+			}
+		}
+		previous_songScore = PlayState.instance.songScore;
+
+		if (!healthBarOverride || GammodOptions.get('highscoreEffects')) return;
 		PlayState.instance.healthBar.createFilledBar(leftHealthBarColor.color, rightHealthBarColor.color);
 		PlayState.instance.healthBar.updateFilledBar();
+	}
+
+	public function highscoreReachedFX()
+	{
+		// The score meter gets a cool rainbow effect.
+		// Small conffetti animation pops up on that text too.
+		// YIPPIE!!
+
+		//ModuleHandler.getModule('FukkitDebugPrint').debugPrint('DOING EFFECTS CUZ YOUR REACH DE HIHSCORE!!! consider yourself amazed', 15, 0xFFFFFFFF, true);
+
+		trace('DOING EFFECTS CUZ YOUR REACH DE HIHSCORE!!! consider yourself amazed');
+
+		FunkinSound.playOnce(Paths.sound('highscore')).volume = 10;
+		PlayState.instance.scoreText.setBorderStyle(FlxTextBorderStyle.NONE);
+		PlayState.instance.scoreText.visible = false;
+		scoreTxtFXOut.visible = true;
+		scoreTxtFX.visible = true;
+	}
+
+	public function highscoreLostFX()
+	{
+		// The score meter gets a cool rainbow effect.
+		// Small conffetti animation pops up on that text too.
+		// YIPPIE!!
+
+		//ModuleHandler.getModule('FukkitDebugPrint').debugPrint('DOING EFFECTS CUZ YOU lost your highscore what the fuck are you on you bum', 15, 0xFF000000, true);
+
+		trace('DOING EFFECTS CUZ YOU lost your highscore what the fuck are you on you bum');
+
+		FunkinSound.playOnce(Paths.sound('highscoreLost')).volume = 10;
+		PlayState.instance.scoreText.visible = true;
+		PlayState.instance.scoreText.borderStyle = FlxTextBorderStyle.OUTLINE;
+   		PlayState.instance.scoreText.borderColor = FlxColor.BLACK;
+		scoreTxtFXOut.visible = false;
+		scoreTxtFX.visible = false;
+	}
+
+	public function onSongRetry(event:SongRetryEvent) 
+	{
+		if (didHighscoreEvents) highscoreLostFX();
+	}
+
+	public function onCountdownStart()
+	{
+		didHighscoreEvents = false;
+
+		// REMEMBER TO SET ALL THIS TO "null" WHEN WE'RE NOT IN A SONG!!!
+
+		currentSong = 
+		{
+			song: PlayState.instance.currentSong.id,
+			variation: PlayState.instance.currentVariation ?? 'default',
+			difficulty: PlayState.instance.currentDifficulty
+		};
+
+		gammodHighscore = ModuleHandler.getModule('GammodHighscoreModule').getScore(currentSong) ?? 
+		{
+			score: 0,
+			mult: 1.0
+		};
+		gammodMultHighscore = Std.int(gammodHighscore.score * gammodHighscore.mult);
+		fnfHighscore = Save.instance.getSongScore(currentSong.song,currentSong.difficulty,currentSong.variation) != null ? Save.instance.getSongScore(currentSong.song,currentSong.difficulty,currentSong.variation).score : 0;
+		isGammodHighscore = gammodMultHighscore > fnfHighscore;
+		songHighscore = isGammodHighscore ? gammodMultHighscore : fnfHighscore;
+	}
+
+	override public function onSongEnd(event)
+	{
+		song_finished = true;
+		if (!PlayState.instance.isPracticeMode) PlayState.instance.isPracticeMode = ModuleHandler.getModule('GammodMult').unranked;
+		
+		var songScore: GammodHighscore = 
+		{
+			score: PlayState.instance.songScore,
+			mult: ModuleHandler.getModule('GammodMult').score_multiplier
+		};
+		var multSongScore: Int = Std.int(songScore.score * songScore.mult);
+
+		PlayState.instance.scoreText.visible = false;
+		if (scoreTxtFX != null) scoreTxtFX.visible = false;
+		if (scoreTxtFXOut != null) scoreTxtFXOut.visible = false;
+
+		if (curMultTxt != null) curMultTxt.visible = false;
+		if (curNoRankTxt != null) curNoRankTxt.visible = false;
+
+		// If we're not in story mode.
+		// If we're not in an unranked run.
+		// If we have any multiplier active, (mult. is different to 1).
+		if (!PlayStatePlaylist.isStoryMode && !ModuleHandler.getModule('GammodMult').unranked && ModuleHandler.getModule('GammodMult').score_multiplier != 1.0)
+		{
+			
+			// ^ Logic to see if the resulting score is bigger than either FNF's highscore or GAMMOD's highscore.
+
+			/*
+			 * Yeah, doing a clean score (without modifiers) saves if it is bigger than FNF's internal highscore,
+			 * but it won't show at the results screen as a highscore.
+			 * 
+			 * EXAMPLE:
+			 * If you have a song with
+			 * GAMMOD SCORE = 10
+			 * FNF SCORE = 8
+			 * and you beat that song with 9, it'll replace FNF SCORE with 9, but not announce a highscore
+			 * and still show 10 (GAMMOD SCORE).
+			 */
+
+			resultsParams = 
+			{
+				internalScore: fnfHighscore,
+				internalSong: currentSong,
+				resultingScore: songScore,
+				modifiedRun: true,
+				wasHighscore: false
+			}
+
+			PlayState.instance.songScore = 0;
+
+			if (multSongScore > songHighscore)
+			{
+				// Logic for when the made score is bigger than the picked highscore.
+				// So, if FNF's highscore is picked, running this means the made score is bigger than that one.
+				// If GAMMOD's highscore is picked, running this means the made score is bigger than GAMMOD's.
+				trace('[GAMMOD] (SCORES) Reached highscore! Said highscore was ' + (isGammodHighscore ? 'GAMMOD' : 'FNF') + "'s courtesy!");
+				trace('[GAMMOD] (SCORES) You did: ' + multSongScore);
+				trace('[GAMMOD] (SCORES) Highscore was: ' + songHighscore);
+
+				resultsParams.wasHighscore = true;
+
+				ModuleHandler.getModule('GammodHighscoreModule').saveScore
+				(
+					{
+						highscore: songScore,
+						song: currentSong
+					}
+				);
+
+				// We trick FNF' into thinking this was a highscore, so it does all the animations and stuff for it.
+				//PlayState.instance.scoreText.dirty = false;
+			}
+		}
+		else
+		{
+			resultsParams = 
+			{
+				internalScore: PlayState.instance.songScore,
+				internalSong: currentSong,
+				resultingScore: PlayState.instance.songScore,
+				modifiedRun: false,
+				wasHighscore: (multSongScore > songHighscore) && !ModuleHandler.getModule('GammodMult').unranked
+			}
+		}
+
+		// If the score mult is below 1.0.
+		if (ModuleHandler.getModule('GammodMult').score_multiplier < 1.0) 
+		PlayState.instance.songScore = PlayState.instance.songScore * ModuleHandler.getModule('GammodMult').score_multiplier;
+	}
+
+	public function onStateChangeEnd(event:StateChangeScriptEvent)
+	{
+		if (event.targetState is PlayState)
+		{
+			if (!GammodModifierHandler.mod_registry_done) ModuleHandler.getModule('GammodModifierHandler').registerMods();
+
+			if (PlayStatePlaylist.isStoryMode) return;
+			var scoreText_position:Int = event.targetState.getLastIndex
+			(
+				(member)->
+				{
+					return member == event.targetState.scoreText;
+				}
+			);
+			ModuleHandler.getModule('GammodMult').calcMult();
+			//trace('-----  SCORE MULTIPLIER FUCKING VALUE: ' + ModuleHandler.getModule('GammodMult').score_multiplier);
+			if (GammodOptions.get('showMult') && ModuleHandler.getModule('GammodMult').score_multiplier != 1.0)
+			{
+				trace(ModuleHandler.getModule('GammodMult').score_multiplier);
+				var multTxt: FlxText = new FlxText(0,0, 0, 'Mult: x' + ModuleHandler.getModule('GammodMult').score_multiplier, 20, true).setFormat(Paths.font('vcr.ttf'), 16, 0xFF00ffff, FlxText.RIGHT, FlxTextBorderStyle.OUTLINE, 0xFF003f8c);
+				curMultTxt = multTxt;
+				if (Math.floor(ModuleHandler.getModule('GammodMult').score_multiplier) == ModuleHandler.getModule('GammodMult').score_multiplier)
+				{
+					multTxt.text = multTxt.text + '.0';
+				}
+				multTxt.x = event.targetState.scoreText.x;
+				multTxt.y = event.targetState.scoreText.y + 20;
+				multTxt.zIndex = 1000;
+
+				// Inserting into the state instead of adding since apparently zIndex was a lie all this time.
+				event.targetState.insert(scoreText_position, multTxt);
+				multTxt.cameras = event.targetState.scoreText.cameras;
+			}
+			if (GammodOptions.get('showUnranked') && ModuleHandler.getModule('GammodMult').unranked)
+			{
+				var unrankedTxt: FlxText = new FlxText(0,0, 0, 'UNRANKED', 20, true).setFormat(Paths.font('vcr.ttf'), 16, 0xFFff0000, FlxText.RIGHT, FlxTextBorderStyle.OUTLINE, 0xFF300b00);
+				curNoRankTxt = unrankedTxt;
+				unrankedTxt.x = event.targetState.scoreText.x;
+				unrankedTxt.y = event.targetState.scoreText.y;
+				event.targetState.scoreText.x = unrankedTxt.x + unrankedTxt.width + 10;
+				unrankedTxt.zIndex = 1000;
+				event.targetState.insert(scoreText_position, unrankedTxt);
+				unrankedTxt.cameras = event.targetState.scoreText.cameras;
+			}
+
+			if (scoreTxtFX != null)
+			{
+				scoreTxtFX.destroy();
+				scoreTxtFX = null;
+			}
+
+			if (GammodOptions.get('highscoreEffects'))
+			{
+				outlineEffectShi = new FlxOutlineEffect(FlxOutlineEffect.NORMAL, 0xFFFFFFFF, 2.5, 0, 1);
+				outlineEffectShi.dirty = true;
+
+				scoreTxtFXOut = new FlxEffectSprite(event.targetState.scoreText, [outlineEffectShi, new FlxRainbowEffect(1, 0.5, 2.4, 0)]);
+				scoreTxtFXOut.scrollFactor.set();
+				scoreTxtFXOut.zIndex = 1000;
+				event.targetState.insert(scoreText_position, scoreTxtFXOut);
+				scoreTxtFXOut.cameras = [PlayState.instance.camHUD];
+				scoreTxtFXOut.shader = new GaussianBlurShader(1);
+				scoreTxtFXOut.visible = false;
+				
+				scoreTxtFX = new FlxEffectSprite(event.targetState.scoreText, [new FlxRainbowEffect(1, 3.3, 2.4, 0)]);
+				scoreTxtFX.scrollFactor.set();
+				scoreTxtFX.zIndex = 1000;
+				event.targetState.insert(scoreText_position + 1, scoreTxtFX);
+				scoreTxtFX.cameras = [PlayState.instance.camHUD];
+				scoreTxtFX.visible = false;
+			}
+		}
 	}
 }

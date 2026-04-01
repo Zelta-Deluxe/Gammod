@@ -1,0 +1,90 @@
+import funkin.modding.module.Module;
+import funkin.modding.module.ModuleHandler;
+import funkin.play.PlayState;
+import flixel.math.FlxMath;
+import funkin.Conductor;
+import funkin.util.Constants;
+import flixel.FlxSprite;
+import gammod.modifiers.GammodModType;
+import gammod.modifiers.GammodPlatform;
+import gammod.util.GammodTweenManager as Tweens;
+import gammod.modifiers.GammodModifier;
+import gammod.options.GammodOptionsModule as GammodOptions;
+import Math;
+
+class GammodHealthDrain extends GammodModifier
+{
+	var pulseColor: Int = Constants.COLOR_HEALTH_BAR_RED;
+	var pulseHardColor: Int = 0xFF900000;
+
+	public function new()
+	{
+		super('GammodHealthDrain', GammodModType.FLOATRANGE(0.0, 15.0, 0.1), {default_value: 0.0});
+
+		display_name = 'Health Drain';
+		//prefix = {value='x'; at_default=true; at_pre_default=false;};
+		colors = [0xFFff1100,0xff910a00];
+		multiplier =
+		{
+			fromValue: false, // If true, other values will be ignored and the added multiplier will be generated directly from the value.
+			addition: 0.0, // The value we'll work with for the mult (read more).
+			reversable: false, // If true, values below default will invert the added multiplier. (value: 0.5 (default: 1, step_value: 0.1); addition: 1; mult => -5)
+			perStep: false // If true, multiplier will be `addition` times the amount of steps away from the value. If not, `addition` will just be added if the value is not default.
+		};
+		description = "MULTIPLIES HEALTH LOST PER ENEMY NOTE"; // DON'T HESITATE
+		prefix = {shape:'x', at_default:true};
+	}
+
+	public function onNoteHit(event)
+	{
+		if (!event.note.noteData.getMustHitNote() && value != 0.0)
+		{
+			if ((PlayState.instance.health - ((1.5 * value) / 100.0 * Constants.HEALTH_MAX)) > 0.0)
+			{
+				PlayState.instance.health -= ((1.5 * value) / 100.0 * Constants.HEALTH_MAX);
+				if (GammodOptions.get('modifierEffects'))
+				{
+					ModuleHandler.getModule('GammodPlayModule').rightHealthBarColor.color = pulseColor;
+					Tweens.cancel('pulse_healthBarRight');
+					Tweens.color(
+						'pulse_healthBarRight',
+						ModuleHandler.getModule('GammodPlayModule').rightHealthBarColor,
+						ModuleHandler.getModule('GammodPlayModule').rightHealthBarColorFinal,
+						0.3,
+						0,
+						'circIn'
+					);
+				}
+			}
+			else
+			{
+				PlayState.instance.health = 0.01;
+				ModuleHandler.getModule('GammodPlayModule').leftHealthBarColor.color = pulseHardColor;
+				Tweens.cancel('pulse_healthBarLeft');
+				Tweens.color(
+					'pulse_healthBarLeft',
+					ModuleHandler.getModule('GammodPlayModule').leftHealthBarColor,
+					ModuleHandler.getModule('GammodPlayModule').leftHealthBarColorFinal,
+					0.3,
+					0,
+					'circIn'
+				);
+			}
+		}
+	}
+
+	override public function onUpdate(event)
+	{
+		if (!isDefault())
+		{
+			for (holdNote in PlayState.instance.opponentStrumline.holdNotes.members)
+			{
+				if (holdNote == null || !holdNote.alive) continue;
+				if (holdNote.hitNote && !holdNote.missedNote && holdNote.sustainLength > 0 && (PlayState.instance.health - (value * Constants.HEALTH_HOLD_BONUS_PER_SECOND) > 0.0))
+				{
+					PlayState.instance.health -= (value * Constants.HEALTH_HOLD_BONUS_PER_SECOND) * event.elapsed;
+				}
+			}
+		}
+	}
+}

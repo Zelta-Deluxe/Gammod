@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?><TextureAtlas imagePath="multLightning.png">
+	<!-- Created using the Spritesheet and XML generator -->
+	<!-- https://uncertainprod.github.io/FNF-Spritesheet-XML-generator-Web -->
+	<SubTexture name="shock0000" x="278" y="80" width="4" height="4" frameX="0" frameY="0" frameWidth="220" frameHeight="80"/>
+	<SubTexture name="shock0001" x="199" y="0" width="50" height="62" frameX="-6" frameY="-12" frameWidth="220" frameHeight="80"/>
+	<SubTexture name="shock0002" x="0" y="0" width="199" height="80" frameX="-10" frameY="0" frameWidth="220" frameHeight="80"/>
+	<SubTexture name="shock0003" x="0" y="0" width="199" height="80" frameX="-10" frameY="0" frameWidth="220" frameHeight="80"/>
+	<SubTexture name="shock0004" x="0" y="80" width="141" height="42" frameX="-3" frameY="-21" frameWidth="220" frameHeight="80"/>
+	<SubTexture name="shock0005" x="141" y="80" width="137" height="39" frameX="-8" frameY="-25" frameWidth="220" frameHeight="80"/>
+</TextureAtlas>

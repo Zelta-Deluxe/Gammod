@@ -1,0 +1,115 @@
+import funkin.modding.module.Module;
+import funkin.modding.module.ModuleHandler;
+import funkin.play.PlayState;
+import flixel.math.FlxMath;
+import funkin.Conductor;
+import funkin.util.Constants;
+import flixel.FlxSprite;
+import flixel.tweens.FlxTween;
+import gammod.modifiers.GammodModType;
+import gammod.modifiers.GammodPlatform;
+import gammod.util.GammodTweenManager as Tweens;
+import gammod.modifiers.GammodModifier;
+import gammod.options.GammodOptionsModule as GammodOptions;
+import Math;
+
+class GammodLongNotes extends GammodModifier
+{
+	var trailMargin:Int = 100;
+
+	public function new()
+	{
+		super('GammodLongNotes', GammodModType.LIST(['NORMAL', 'NONE', 'ALL', 'INVERTED']), {default_value: 'NORMAL'});
+
+		display_name = 'Long Notes';
+		colors = [0xFF00ffff,0xff1542b7];
+		multiplier = [0.0, 0.0, null, null];
+		description = "CHANGES HOW LONG NOTES APPEAR IN A SONG";
+
+		priority = 68;
+	}
+
+	public function onSongLoaded(chart:SongLoadScriptEvent) 
+	{
+		if (isDefault()) return;
+
+		switch (value)
+		{
+			case 'NONE':
+				removeLongNotes(chart);
+			case 'ALL':
+				fullLongNotes(chart);
+			case 'INVERTED':
+				invertLongNotes(chart);
+		}
+	}
+
+	public function onSongRetry(event:SongRetryEvent) 
+	{
+		if (isDefault()) return;
+
+		switch (value)
+		{
+			case 'NONE':
+				removeLongNotes(PlayState.instance.currentChart);
+			case 'ALL':
+				fullLongNotes(PlayState.instance.currentChart);
+			case 'INVERTED':
+				invertLongNotes(PlayState.instance.currentChart);
+		}
+	}
+
+	public function removeLongNotes(chart:SongDifficulty)
+	{
+		for (note in chart.notes)
+		{
+			if (note.length > 0) note.length = 0;
+		}
+	}
+
+	public function fullLongNotes(chart:SongDifficulty)
+	{
+		var previousNoteFromDir:Map<Int, SongNoteData> = 
+		[
+			-1 => null
+		];
+		previousNoteFromDir.clear(); // WE NEED THIS TYPED BOSS
+		for (note in chart.notes)
+		{
+			//('NOTE ON DIR ${note.data} WITH LENGTH ${note.length} AND POS ${note.time}');
+
+			var previousNote:SongNoteData = null;
+			if (previousNoteFromDir.exists(note.data)) previousNote = previousNoteFromDir[note.data];
+			if (previousNote != null) previousNote.length = FlxMath.bound((note.time - previousNote.time) - trailMargin, 0, null);
+
+			previousNoteFromDir[note.data] = note;
+		}
+	}
+
+	public function invertLongNotes(chart:SongDifficulty)
+	{
+		var previousNoteFromDir:Map<Int, SongNoteData> = 
+		[
+			-1 => null
+		];
+		previousNoteFromDir.clear(); // WE NEED THIS TYPED BOSS
+		for (note in chart.notes)
+		{
+			//('NOTE ON DIR ${note.data} WITH LENGTH ${note.length} AND POS ${note.time}');
+			var previousNote:SongNoteData = null;
+			if (previousNoteFromDir.exists(note.data)) previousNote = previousNoteFromDir[note.data];
+			if (previousNote != null) previousNote.length = FlxMath.bound((note.time - previousNote.time) - trailMargin, 0, null);
+
+
+			if (note.length > 0)
+			{
+				note.length = 0;
+				previousNoteFromDir[note.data] = null;
+			}
+			else
+			{
+				previousNoteFromDir[note.data] = note;
+			}
+		}
+	}
+}

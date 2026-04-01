@@ -1,0 +1,21 @@
+import gammod.modifiers.GammodModType;
+import gammod.modifiers.GammodModifier;
+
+class GammodGhostTapping extends GammodModifier
+{
+	public function new()
+	{
+		super('GammodGhostTapping', GammodModType.SWITCH, {default_value: false});
+
+		display_name = 'Ghost Tapping';
+		colors = [0xff8df4ff, 0xffff4d00];
+		multiplier = null;
+		description = 'IGNORES PRESSING KEYS WITH NO NOTES';
+	}
+
+	public function onNoteGhostMiss(event)
+	{
+		if (isDefault()) return;
+		event.cancel();
+	}
+}

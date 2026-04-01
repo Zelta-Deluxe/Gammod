@@ -1,0 +1,267 @@
+package gammod.modifiers;
+
+import funkin.modding.module.ModuleHandler;
+import funkin.modding.module.ScriptedModule;
+import funkin.modding.module.Module;
+import funkin.play.PlayState;
+import funkin.play.PlayStatePlaylist;
+import funkin.ui.mainmenu.MainMenuState;
+import funkin.ui.freeplay.FreeplayState;
+import flixel.FlxG;
+import funkin.save.Save;
+import haxe.ds.StringMap;
+import gammod.modifiers.GammodModType;
+import gammod.modifiers.GammodModifier;
+import Bool;
+import Array;
+import Int;
+import Float;
+import String;
+import Type;
+import Reflect;
+
+/*
+MOD MULTIPLIERS:
+- if the mod is a switch, multiplier is a float that applies if active.
+- if the mod is a list, multiplier is an array of floats of the same length as the possible values, each value pairs with its value.
+- if the mod is an intRange, multiplier is how much mult applies per unit of difference from the default value 
+	(if multiplier == 0.5 & value == 2 & default_value == 0, totalMult = 1)
+- if the mod is a floatRange, value difference is straight up added to the mult and multiplier is a multiplier for how much is added.
+	(if multiplier == 0.5 & value == 2 & default_value == 1, totalMult = 1)
+	(if multiplier == 1 & value == 2 & default_value == 1, totalMult = 2)
+*/
+
+class GammodModifierHandler extends ScriptedModule
+{
+	public static var instance:GammodModifierHandler;
+	var mods_on: Bool = false;
+	public static var mod_registry_done:Bool = false;
+
+	var registered_mods:Map<String, Module> = 
+	[
+		'Gammod Default' => null
+	];
+
+	var registered_mods_order:Array<String> =
+	[
+		'Gammod Default'
+	];
+
+	var remembered_values:Map<String, Dynamic> =
+	[
+		'Gammod Default' => null
+	];
+	
+	public function new()
+	{
+		super('GammodModifierHandler', 1);
+
+		instance = this;
+	}
+
+	/*
+	 * Checks all mods and returns a count of the amount of active mods.
+	 * If any active mod is found, sets mods_on to true.
+	 */
+	public function updateModsOn():Int
+	{
+		var output: Int = 0;
+		trace('MOD LIST: ' + registered_mods);
+		for (mod in registered_mods)
+		{
+			if (!checkDefault(mod)) output += 1;
+		}
+		mods_on = output != 0;
+		return output;
+	}
+
+	static public function isRegistryDone():Bool
+	{
+		return GammodModifierHandler.mod_registry_done;
+	}
+
+	/*
+	 * Returns a list with all the modifiers that currently don't have a default value.
+	 */
+	public function getActive():Array<Module>
+	{
+		var output:Array<Module> = [];
+		for (mod in registered_mods)
+		{
+			if (!checkDefault(mod)) output.push(mod);
+		}
+		return output;
+	}
+
+	public function setModValue(mod:String, new_value):Void // Unused, tho I should use it
+	{
+		if (classToType(new_value) == ModuleHandler.getModule(mod).type)
+		{
+			ModuleHandler.getModule(mod).value = new_value;
+		}
+	}
+
+	public function classToType(variable):String
+	{
+		if (Std.isOfType(variable, Bool))
+		{
+			return 'Switch';
+		}
+		else if (Std.isOfType(variable, Array))
+		{
+			if (Std.isOfType(variable[0], Int))
+			{
+				if (variable.length() != 2) return 'Unknown';
+				return 'IntRange';
+			}
+			else if (Std.isOfType(variable[0], Float))
+			{
+				if (variable.length() != 2) return 'Unknown';
+				return 'FloatRange';
+			}
+			else if (Std.isOfType(variable[0], String))
+			{
+				return 'List';
+			}
+		}
+		else
+		{
+			return 'Unknown';
+		}
+		return 'Unknown';
+	}
+
+	public function checkDefault(mod:Module):Bool
+	{
+		//trace('checkDefault($mod): ' + Reflect.fields(mod));
+		return mod.isDefault();
+	}
+
+	public override function onSubStateOpenBegin(event):Void
+	{
+		super.onSubStateOpenBegin(event);
+
+		if (event.targetState is FreeplayState) registerMods();
+	}
+
+	public override function onCreate()
+	{
+		registerMods();
+	}
+
+	public function registerMods()
+	{
+		//trace('SUPPOSED MODLIST: ' + GammodModifier.list);
+		registered_mods.clear();
+		registered_mods_order = [];
+		for (module in GammodModifier.list)
+		{
+			//trace(module == GammodModifier);
+			if (module.moduleId == 'gammod.modifiers.GammodModifier') continue;
+			registerModifier(module);
+		}
+		GammodModifierHandler.mod_registry_done = true;
+
+		/*
+		registered_mods.clear();
+		registered_mods_order = [];
+		for (module in ModuleHandler.moduleCache.keys())
+		{
+			var modifier:GammodModifier = Std.downcast(ModuleHandler.getModule(module), GammodModifier);
+			trace('$module HAS GAMMOD CAPSULE: ' + Reflect.hasField(ModuleHandler.getModule(module), 'GAMMOD_PASSWORD'));
+			if (modifier?.GAMMOD_PASSWORD == null) continue;
+			registered_mods[module] = ModuleHandler.getModule(module);
+			registered_mods_order.push(module);
+			if (Save.instance.modOptions.get('Gammod').get('Modifiers') == null) Save.instance.modOptions.get('Gammod').set('Modifiers', new StringMap());
+			if (Save.instance.modOptions.get('Gammod').get('Modifiers').get(module) != null) registered_mods[module].value = Save.instance.modOptions.get('Gammod').get('Modifiers').get(module);
+			registered_mods_order.sort
+			(
+				function(a:String, b:String):Int 
+				{
+			    		if (a < b) return -1;
+			    		if (a > b) return 1;
+			    		return 0;
+				}
+			);
+			trace('Registered mod by the name of "' + module + '".');
+		}
+		mod_registry_done = true;
+		*/
+	}
+
+	public function registerModifier(modifier:GammodModifier)
+	{
+		var module:String = modifier.moduleId;
+		registered_mods[module] = ModuleHandler.getModule(module);
+		registered_mods_order.push(module);
+		//if (Save.instance.modOptions.get('Gammod').get('Modifiers') == null) Save.instance.modOptions.get('Gammod').set('Modifiers', new StringMap());
+		//if (Save.instance.modOptions.get('Gammod').get('Modifiers').get(module) != null) registered_mods[module].value = Save.instance.modOptions.get('Gammod').get('Modifiers').get(module);
+		registered_mods_order.sort
+		(
+			function(a:String, b:String):Int 
+			{
+		    		if (a < b) return -1;
+		    		if (a > b) return 1;
+		    		return 0;
+			}
+		);
+		trace('Registered mod by the name of "' + module + '".');
+	}
+
+	public override function onSongLoaded(event)
+	{
+		super.onSongLoaded(event);
+
+		if (PlayStatePlaylist.isStoryMode)
+		{
+			trace('This is Story Mode. Defaulting all Gammod modifiers.');
+			remembered_values.clear();
+			for (mod in registered_mods.keys())
+			{
+				remembered_values[mod] = registered_mods[mod].value;
+				setToDefault(registered_mods[mod]);
+			}
+		}
+		else
+		{
+			for (mod in registered_mods.keys())
+			{
+				// We're in a banned song? Nuh uh, no modifier for ya
+				if (registered_mods[mod].banned_songs?.contains(event.id) && !registered_mods[mod].isDefault()) 
+				{
+					trace('Trying to play song "${event.id}", which is banned by "$mod".');
+					setToDefault(registered_mods[mod]);
+				}
+			}
+		}
+	}
+
+	public function setToDefault(modifier:GammodModifier)
+	{
+		trace('Previous value of "' + modifier.display_name + '": ' + modifier.value);
+		switch(modifier.type)
+		{
+			case GammodModType.SWITCH:
+				modifier.value = modifier.default_value;
+			default:
+				modifier.value = modifier.default_value;
+		}
+		trace('New value of "' + modifier.display_name + '": ' + modifier.value);
+	}
+
+	public override function onStateChangeEnd(event) 
+	{
+		super.onStateChangeEnd(event);
+
+		if (false) // MAKE THIS A CONDITION THAT IS ONLY TRUE IF YOU'RE GETTING OUT OF A STORY MODE WEEK, IDK WHY WONT IT WORK
+		{
+			trace('Giving previous values to all Gammod modifiers.');
+			for (mod in registered_mods.keys())
+			{
+				trace('Previous value of "' + registered_mods[mod].display_name + '": ' + registered_mods[mod].value);
+				registered_mods[mod].value = remembered_values[mod];
+				trace('New value of "' + registered_mods[mod].display_name + '": ' + registered_mods[mod].value);
+			}
+		}
+	}
+}

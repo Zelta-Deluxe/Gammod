@@ -1,0 +1,81 @@
+import funkin.modding.module.Module;
+import funkin.play.PlayState;
+import funkin.util.Constants;
+import funkin.audio.FunkinSound;
+import gammod.modifiers.GammodModType;
+import gammod.modifiers.GammodPlatform;
+import gammod.modifiers.GammodModifier;
+import gammod.options.GammodOptionsModule as GammodOptions;
+
+class GammodPerfectOnly extends GammodModifier
+{	
+	var judgements: Array<String> = ['sick', 'good'];
+
+	public function new()
+	{
+		super('GammodPerfectOnly', GammodModType.LIST(['Disabled', 'Purple', 'Golden']), {default_value:'Disabled'});
+
+		display_name = 'Perfect Only';
+		colors = [0xFFffe100, 0xffff9900];
+		multiplier = [0.0, 0.0, 0.0];
+		description = 'RESTARTS IF THE SET RANK IS NOT MET';
+	}
+
+	public override function onNoteHit(event:HitNoteScriptEvent)
+  	{
+		switch (value)
+		{
+			case 'Purple':
+				judgements = ['sick', 'good'];
+			case 'Golden':
+				judgements = ['sick'];
+		}
+		if (!isDefault() && !judgements.contains(event.judgement) && event.note.noteData.getMustHitNote())
+		{
+			perfectOnlyRestart();
+		}
+	}
+
+	public override function onNoteMiss(event:HitNoteScriptEvent)
+  	{
+		if (!isDefault()) perfectOnlyRestart();
+	}
+
+	public override function onNoteGhostMiss(event:GhostMissNoteScriptEvent) 
+	{
+		if (!isDefault()) perfectOnlyRestart();
+	}
+
+	public override function onSongStart(event:ScriptEvent)
+	{
+		super.onSongStart(event);
+
+		if (!isDefault()) Constants.GHOST_TAPPING = false;
+	}
+
+	public function perfectOnlyRestart()
+	{
+		PlayState.instance.needsReset = true;
+		Constants.GHOST_TAPPING = true;
+		if (!PlayState.instance.startingSong) FunkinSound.playOnce(Paths.sound('perfectRewind'));
+	}
+
+	override public function onCountdownStart(event:CountdownScriptEvent)
+	{
+		super.onCountdownStart(event);
+		
+		if (!isDefault() && GammodOptions.get('modifierEffects'))
+		{
+			switch (value)
+			{
+				case 'Purple':
+					PlayState.instance.scoreText.color = 0xFFffaeff;
+					PlayState.instance.scoreText.borderColor = 0xFFbb4f8a;
+				case 'Golden':
+					PlayState.instance.scoreText.color = 0xFFFDF62B;
+					PlayState.instance.scoreText.borderColor = 0xFFFA501C;
+			}
+			PlayState.instance.scoreText.borderSize = 2;
+		}
+	}
+}

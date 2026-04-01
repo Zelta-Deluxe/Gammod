@@ -1,0 +1,55 @@
+package gammod;
+
+import funkin.modding.module.Module;
+import funkin.modding.module.ModuleHandler;
+import funkin.util.HostPlatform;
+import funkin.util.PlatformUtil;
+import funkin.save.Save;
+import haxe.ds.StringMap;
+
+
+/*
+ * Class for easy access for other mods.
+ * 
+ * TODO: 
+ * - Currently really empty and useless lol, I need to make incompatibilities work SO NO KIDS GO COMPLAIN ABOUT THEIR SILLY BILLY PORT NOT WORKING WITH GAMMOD OR SUM
+ * - Also, an easy way for users to blacklist a song from GAMMOD's reach would be cool too, that way if you find a song that doesn't work well with a modifier, just blacklist it.
+ * - And no, if a mod toggles an incompatibility BY CODE, you can not change it in-game, it's blocked now.
+ * - Make a lot of static variables here so everyone (including you) can access a bunch of functions from different scripts without having to deal with ModuleHandler.
+ */
+class Gammod extends Module
+{
+	var debug: Bool = false;
+
+	var modifiersMenuHitbox: FlxSprite;
+	
+	/*
+	 * A list containing all the songs that will revert certain modifiers.
+	 * 
+	 * NOTE: Make the structure for this based on objects. GammodSongModIncompat => {song = 'dick-erect', modifiers = ['GammodCoolMod', 'AddonCoolerMod']}
+	 */
+	var modifierExeptions;
+
+	public function new()
+    	{
+		super('Gammod', 0);
+
+		if (Save.instance.getModOptions('Gammod') is StringMap)
+		{
+			Save.instance.setModOptions('Gammod', {});
+		}
+	}
+	
+	static public function dtrace(output:String)
+	{
+		if (ModuleHandler.getModule('Gammod').debug) trace(output);
+	}
+
+	/*
+	 * Util function to get if we're on mobile or not.
+	 */
+	static public function mobile():Bool
+	{
+		return (FlxG.mobile ?? false) || [HostPlatform.ANDROID, HostPlatform.IOS].contains(PlatformUtil.detectHostPlatform());
+	}
+}

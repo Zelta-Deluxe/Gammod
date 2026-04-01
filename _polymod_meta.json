@@ -1,23 +1,41 @@
 {
-	"title": "Gammod",
-	"description": "Gameplay modifiers to pump up those highscores",
-	"homepage": "pending",
-	"contributors": 
-	[
-		{
-			"name": "Zelta",
-			"description": "Look at this dude.",
-			"role": "Author",
-			"url": "https://gamebanana.com/members/1893619"
-		}
-	],
-	"dependencies": 
-	[
-		{
-			"Fukkit": ">=1.0.0"
-		}
-	],
-	"api_version": "0.7.4",
-	"mod_version": "1.0.0",
-	"license": "Apache-2.0"
+  "title": "Gammod",
+  "id": "Gammod",
+  "description": "Infinite replayability in the palm of your hands",
+  "homepage": "https://gamebanana.com/mods/632905",
+  "contributors": [
+    {
+      "name": "Zelta",
+      "description": "",
+      "role": "Director, lead coder and sound work",
+      "url": "https://gamebanana.com/members/1893619"
+    },
+    {
+      "name": "givemethesalt",
+      "description": "",
+      "role": "Artist and animator",
+      "url": "https://gamebanana.com/members/1775057"
+    },
+    {
+      "name": "ChazbillYT.",
+      "description": "",
+      "role": "UI artist and playtester",
+      "url": "https://gamebanana.com/members/2151108"
+    },
+    {
+      "name": "Revvie",
+      "description": "",
+      "role": "Promo artist",
+      "url": "https://gamebanana.com/members/4337475"
+    },
+    {
+      "name": "HEAVYSTYLES",
+      "description": "",
+      "role": "Playtesting and help with mobile emulation",
+      "url": "https://gamebanana.com/members/1827935"
+    }
+  ],
+  "api_version": "0.8.1",
+  "mod_version": "1.0.0",
+  "license": "Apache-2.0"
 }

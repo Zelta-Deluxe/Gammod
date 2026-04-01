@@ -1,0 +1,225 @@
+package gammod.util;
+
+import funkin.modding.module.Module;
+import funkin.modding.module.ModuleHandler;
+import flixel.tweens.FlxTween;
+import flixel.util.FlxTimer;
+import flixel.tweens.FlxEase;
+import flixel.tweens.misc.VarTween;
+import flixel.util.FlxTimer;
+import lime.math.Vector2;
+import gammod.Gammod;
+
+/*
+ * Custom tween manager I like to have so I don't have to create 100 variables per script that contains tweens to keep track of them.
+ * Better than a tween data system? I mean, for the amount of cases I need tweens in, yeah, this is better.
+ * 
+ * Some functions have a Static variant so you can use them by importing the class and doing (for example) "GammodTweenManager.tween('do my beat twin', ...)".
+ */
+
+class GammodTweenManager extends Module
+{
+	var debug_mode: Bool = false;
+	var tweens: Map<String, FlxTween> = ['default' => null];
+	private var tween_timers: Map<String, FlxTimer> = ['default' => null];
+	final EASINGS: Map<String, FlxEase> = 
+	[
+		'linear' => FlxEase.linear,
+		'quadIn' => FlxEase.quadIn,
+		'quadOut' => FlxEase.quadOut,
+		'quadInOut' => FlxEase.quadInOut,
+		'cubicIn' => FlxEase.cubicIn,
+		'cubicOut' => FlxEase.cubicOut,
+		'cubicInOut' => FlxEase.cubicInOut,
+		'quartIn' => FlxEase.quartIn,
+		'quartOut' => FlxEase.quartOut,
+		'quartInOut' => FlxEase.quartInOut,
+		'quintIn' => FlxEase.quintIn,
+		'quintOut' => FlxEase.quintOut,
+		'quintInOut' => FlxEase.quintInOut,
+		'sineIn' => FlxEase.sineIn,
+		'sineOut' => FlxEase.sineOut,
+		'sineInOut' => FlxEase.sineInOut,
+		'expoIn' => FlxEase.expoIn,
+		'expoOut' => FlxEase.expoOut,
+		'expoInOut' => FlxEase.expoInOut,
+		'circIn' => FlxEase.circIn,
+		'circOut' => FlxEase.circOut,
+		'circInOut' => FlxEase.circInOut,
+	];
+	final TYPES: Map<String, FlxTween.TYPE> = 
+	[
+		'oneshot' => FlxTween.ONESHOT,
+		'looping' => FlxTween.LOOPING,
+		'persist' => FlxTween.PERSIST,
+		'backward' => FlxTween.BACKWARD,
+		'pingpong' => FlxTween.PINGPONG
+	];
+
+	public function new()
+	{
+		super('GammodTweenManager');
+
+		tweens.clear();
+
+		priority = 0;
+	}
+
+	static public function tween(tag: String, object, values, duration, delay: Int = 0, easing: String = 'linear', type: String = 'oneshot', ?oncomplete):FlxTween
+	{
+		return ModuleHandler.getModule('GammodTweenManager').startTween(tag, object, values, duration, delay, easing, type, oncomplete);
+	}
+
+	public function startTween(tag: String, object, values, duration, delay: Int = 0, easing: String = 'linear', type: String = 'oneshot', ?oncomplete):FlxTween
+	{
+		var onComplete_parameter = oncomplete;
+		if (tweens[tag] == null)
+		{
+			var _tag: String = tag;
+			tweens[tag] = FlxTween.tween
+			(
+				object, 
+				values, 
+				duration,
+				{
+					ease: EASINGS[easing],
+					type: TYPES[type],
+					startDelay: delay,
+					onComplete: function(tween) 
+					{
+						if (onComplete_parameter != null) onComplete_parameter(tween);
+						tweens.remove(_tag);
+					}
+				}
+			);
+			Gammod.dtrace('Created tween with tag "' + tag + '".');
+		} 
+		else
+		{
+			Gammod.dtrace('Tried to create tween, but a tween with tag "' + tag + '" already exists!');
+		}
+		return tweens[tag];
+	}
+
+	static public function color(tag: String, object, values, duration: Float, delay: Int = 0, easing: String = 'linear', type: String = 'oneshot', ?oncomplete)
+	{
+		ModuleHandler.getModule('GammodTweenManager').startColor(tag, object, values, duration, delay, easing, type, oncomplete);
+	}
+
+	public function startColor(tag: String, object, values, duration: Float, delay: Int = 0, easing: String = 'linear', type: String = 'oneshot', ?oncomplete)
+	{
+		var onComplete_parameter = oncomplete;
+		if (tweens[tag] == null)
+		{
+			var _tag: String = tag;
+			tweens[tag] = FlxTween.color
+			(
+				object,
+				duration,
+				object.color,
+				values,
+				{
+					ease: EASINGS[easing],
+					type: TYPES[type],
+					startDelay: delay,
+					onComplete: function(tween) 
+					{
+						if (onComplete_parameter != null) onComplete_parameter(tween);
+						tweens.remove(_tag);
+					}
+				}
+			);
+			Gammod.dtrace('Created color tween with tag "' + tag + '".');
+		} 
+		else
+		{
+			Gammod.dtrace('Tried to create color tween, but a tween with tag "' + tag + '" already exists!');
+		}
+	}
+
+	static public function exists(tag: String)
+	{
+		return ModuleHandler.getModule('GammodTweenManager').tweenExists(tag);
+	}
+
+	public function tweenExists(tag: String):Bool
+	{
+		for (search in tweens.keys())
+		{
+			if (tag == search)
+			{
+				return true;
+			}
+		}
+		return false;
+	}
+
+	static public function cancel(tag: String)
+	{
+		ModuleHandler.getModule('GammodTweenManager').cancelTween(tag);
+	}
+
+	public function cancelTween(tag: String)
+	{
+		if (tweens[tag] != null)
+		{
+			tweens[tag].cancel();
+			tweens.remove(tag);
+			Gammod.dtrace('Cancelled tween with tag "' + tag + '".');
+		} else
+		{
+			Gammod.dtrace('Tried to cancel tween, but a tween with tag "' + tag + '" is not active!');
+		}
+	}
+
+	static public function pause(tag: String)
+	{
+		return ModuleHandler.getModule('GammodTweenManager').pauseTween(tag);
+	}
+
+	public function pauseTween(tag: String)
+	{
+		if (tweens[tag] != null)
+		{
+			tweens[tag].active = false;
+			Gammod.dtrace('Pausing tween with tag "' + tag + '".');
+		} else
+		{
+			Gammod.dtrace('Tried to pause tween, but a tween with tag "' + tag + '" is not active!');
+		}
+	}
+
+	public function resume(tag: String)
+	{
+		if (tweens[tag] != null)
+		{
+			tweens[tag].active = true;
+			Gammod.dtrace('Pausing tween with tag "' + tag + '".');
+		} else
+		{
+			Gammod.dtrace('Tried to resume tween, but a tween with tag "' + tag + '" is not active!');
+		}
+	}
+
+	public function batchCancel(prefix: String)
+	{
+		for (tag in tweens.keys())
+		{
+			if (tag.indexOf(prefix) != -1)
+			{
+				cancelTween(tag);
+			}
+		}
+	}
+
+	public function batchPause(prefix: String)
+	{
+		for (tag in tweens.keys())
+		{
+			if (tag.indexOf(prefix) != -1)
+			{
+				pauseTween(tag);
+			}
+		}
+	}
+}

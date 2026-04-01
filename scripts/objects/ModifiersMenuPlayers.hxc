@@ -1,0 +1,44 @@
+package gammod.ui;
+
+import funkin.graphics.FunkinSprite;
+import flixel.group.FlxTypedSpriteGroup;
+
+class ModifiersMenuPlayers extends FlxTypedSpriteGroup
+{
+	public var gays:FunkinSprite;
+	public var tv:FunkinSprite;
+
+	public function new(x:Float, y:Float, scale:Float = 1.05)
+	{
+		super(0,0);
+
+		gays = new FunkinSprite(0,0);
+		gays.loadTextureAtlas('ui/gammodMenu/gammod-players', 'shared', {cacheOnLoad:true});
+		//gays.antialiasing = false;
+		gays.anim.play('faggot gaming NOTV');
+		gays.anim.onFinish.add(loopAnim);
+		gays.scale.set(scale,scale);
+		reversed = true;
+		gays.x = x + 270;
+		gays.y = y + 60;
+		this.add(gays);
+		
+		tv = new FunkinSprite(0,0);
+		tv.frames = Paths.getSparrowAtlas('ui/gammodMenu/tv', 'shared');
+		tv.anim.addByPrefix('idle', 'faggot gaming TV', 24);
+		tv.anim.play('idle');
+		tv.scale.set(scale,scale);
+		tv.x = x;
+		tv.y = y;
+		this.add(tv);
+
+		this.x = x;
+		this.y = y;
+	}
+
+	function loopAnim()
+	{
+		gays.anim.play('faggot gaming NOTV', true, false);
+		tv.anim.play('idle', true);
+	}
+}

@@ -1,0 +1,6 @@
+<?xml version='1.0' encoding='utf-8'?>
+<TextureAtlas imagePath="onStickerIcon.png">
+<SubTexture name="onStickerIcon mult0000" x="874" y="0" width="438" height="489" frameX="0" frameY="0" frameWidth="500" frameHeight="500" />
+<SubTexture name="onStickerIcon on0000" x="0" y="0" width="439" height="499" frameX="0" frameY="0" frameWidth="500" frameHeight="500" />
+<SubTexture name="onStickerIcon unranked0000" x="439" y="0" width="435" height="498" frameX="0" frameY="0" frameWidth="500" frameHeight="500" />
+</TextureAtlas>

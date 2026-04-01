@@ -1,0 +1,26 @@
+package gammod.shaders;
+
+// Unused lol, but the shader is cool so I'll leave it here.
+
+import flixel.addons.display.FlxRuntimeShader;
+import flixel.FlxG;
+import funkin.Assets;
+
+class PixelSorting extends FlxRuntimeShader
+{
+	public var sort:Float = 0;
+	public var selfAlpha:Float = 1;
+
+	public function new(?seed:Float)
+	{
+		super(Assets.getText(Paths.frag('pixelSorting')));
+	}
+
+	public function update(elapsed:Float)
+	{
+		this.setFloat('sort', sort);
+		this.setFloat('alpha', selfAlpha);
+		this.setFloat('mask_softness', 0);
+		this.setFloat('mask_threshold', 0.5);
+	}
+}

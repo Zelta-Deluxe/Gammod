@@ -1,0 +1,39 @@
+package gammod.shaders;
+
+import flixel.addons.display.FlxRuntimeShader;
+import flixel.FlxG;
+import funkin.Assets;
+
+class LiquidBackgroundShader extends FlxRuntimeShader
+{
+	public var uTime:Float = 0;
+
+	public function new(?seed:Float)
+	{
+		super(Assets.getText(Paths.frag('glitchBackgroundShader')));
+
+		uTime += seed ?? FlxG.random.float(0, 9999);
+	}
+
+	public function setColors(colorA:Int = 0xFF000000, colorB:Int = 0xFF000000)
+	{
+		for (color in [[colorA, 'uColorA'], [colorB, 'uColorB']])
+		{
+			var r:Int = (color[0] >> 16) & 0xFF;
+			var g:Int = (color[0] >> 8) & 0xFF;
+			var b:Int = color[0] & 0xFF;
+
+			var rgb:Array<Float> = [r/255, g/255, b/255];
+
+			this.setFloatArray(color[1], rgb);
+			trace('CHANGED ' + color[1] + ' TO NEW VALUE ' + rgb);
+		}
+	}
+
+	public function update(elapsed:Float, extraSpeed:Float, introProgress:Float)
+	{
+		uTime += (elapsed * 0.5) * extraSpeed;
+		this.setFloat('uTime', uTime);
+		this.setFloat('uIntro', introProgress);
+	}
+}

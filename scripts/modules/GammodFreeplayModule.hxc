@@ -1,25 +1,285 @@
+package gammod;
+
+import gammod.modifiers.GammodModType;
 import funkin.modding.module.Module;
 import funkin.modding.module.ModuleHandler;
 import funkin.ui.mainmenu.MainMenuState;
 import funkin.ui.freeplay.FreeplayState;
+import funkin.graphics.FunkinSprite;
 import funkin.audio.FunkinSound;
+import funkin.input.Control;
+import funkin.input.Device;
+import funkin.util.Constants;
+import flixel.util.FlxTimer;
+import flixel.math.FlxMath;
 import flixel.FlxG;
+import funkin.Preferences;
+import flixel.text.FlxText;
+import flixel.text.FlxTextBorderStyle;
+import flixel.FlxObject;
+import flixel.tweens.FlxTween;
+import funkin.ui.freeplay.FreeplaySongData;
+import flixel.group.FlxTypedSpriteGroup;
+import funkin.play.PlayStatePlaylist;
+import funkin.ui.FullScreenScaleMode;
+import funkin.graphics.shaders.GaussianBlurShader;
+import flixel.util.FlxColor;
+import flixel.FlxSprite;
+import funkin.graphics.shaders.WiggleEffectRuntime;
+import funkin.graphics.shaders.WiggleEffectType;
+import flixel.addons.effects.chainable.FlxRainbowEffect;
+import flixel.addons.effects.chainable.FlxEffectSprite;
+import funkin.util.InputUtil;
+import funkin.ui.freeplay.SongMenuItem;
+import gammod.util.GammodTweenManager as Tweens;
+import gammod.Gammod;
+import funkin.FunkinMemory;
+import gammod.GammodControls;
+import funkin.input.Controls;
+import Std;
+import Reflect;
+
+import funkin.util.TouchUtil;
+import funkin.util.SwipeUtil;
+import funkin.mobile.input.ControlsHandler;
+import funkin.util.PlatformUtil;
+import funkin.util.HostPlatform;
+import funkin.util.HapticUtil;
 
 // This guy will manage activity in the FreeplayState so we can trigger the mods menu and such.
 
+// TODO: Do the transition stuff when you go to the characters menu too
+
+class GammodMultCard extends FlxTypedSpriteGroup
+{
+	var cardSprite: FunkinSprite;
+	var cardOutlines: Array<FunkinSprite> = []; // How to NOT make animations.
+
+	var anim: Int = 0;
+	var animationTimer: FlxTimer;
+	var shown: Bool = false;
+
+	var appearing: Bool = false;
+
+	var multTxt: FlxText;
+	var multTxtOutline: FlxText;
+	var multTxtBlurred: FlxText;
+	var multTxtBlurredBG: FlxText;
+
+	/*
+	 * Tween used to interpolate the text's content.
+	 */
+	public var textTween: FlxTween;
+
+	/*
+	 * The displayed mult.
+	 */
+	public var multProg: Float = 0.0;
+
+	/*
+	 * The actual mult we're tweening to.
+	 */
+	public var intendedMult: Float = 0.0;
+
+	static final SCALE: Float = 0.65;
+	
+	public function new(x:Int, y:Int, ?startingScore:GammodHighscore)
+	{
+		super(x,y);
+
+		cardSprite = new FunkinSprite(0,0).loadGraphic(Paths.image('ui/freeplay/multCard'));
+		cardSprite.scale.set(SCALE,SCALE);
+		cardSprite.updateHitbox();
+		for (i in 0...2)
+		{
+			cardOutlines.push(new FunkinSprite(0,0).loadGraphic(Paths.image('ui/freeplay/multCardOutline' + (i + 1))));
+			cardOutlines[i].scale.set(SCALE,SCALE);
+			cardOutlines[i].updateHitbox();
+			this.add(cardOutlines[i]);
+		}
+		this.add(cardSprite);
+
+		multTxtBlurredBG = new FlxText(37,25, 100, '1.0', 1, true).setFormat(Paths.file('fonts/DS-DIGIB.ttf', 'FONT'), 45.7, 0xFF66aaaa);
+		multTxtBlurredBG.wordWrap = false;
+		multTxtBlurredBG.setBorderStyle(FlxTextBorderStyle.OUTLINE, 0xFF66ffff, 2, 4);
+		multTxtBlurredBG.alignment = 'center';
+		multTxtBlurredBG.shader = new GaussianBlurShader(2);
+		this.add(multTxtBlurredBG);
+
+		multTxtOutline = new FlxText(37,25, 100, '1.0', 1, true).setFormat(Paths.file('fonts/DS-DIGIB.ttf', 'FONT'), 45.7, FlxColor.BLACK);
+		multTxtOutline.wordWrap = false;
+		multTxtOutline.setBorderStyle(FlxTextBorderStyle.OUTLINE, FlxColor.BLACK, 2, 4);
+		multTxtOutline.alignment = 'center';
+		this.add(multTxtOutline);
+
+		multTxtBlurred = new FlxText(37,25, 100, '1.0', 1, true).setFormat(Paths.file('fonts/DS-DIGIB.ttf', 'FONT'), 45.7, 0xFF66ffff);
+		multTxtBlurred.wordWrap = false;
+		multTxtBlurred.setBorderStyle(FlxTextBorderStyle.OUTLINE, 0xFF66ffff, 2, 4);
+		multTxtBlurred.alignment = 'center';
+		multTxtBlurred.shader = new GaussianBlurShader(1);
+		this.add(multTxtBlurred);
+
+		multTxt = new FlxText(37,25, 100, '1.0', 1, true).setFormat(Paths.file('fonts/DS-DIGIB.ttf', 'FONT'), 45.7, FlxColor.WHITE);
+		multTxt.wordWrap = false;
+		multTxt.alignment = 'center';
+		this.add(multTxt);
+
+		if (startingScore == null)
+		{
+			hide();
+		}
+		else
+		{
+			show(startingScore.mult);
+		}
+	}
+
+	public function hideExcept(expectWhat:Int)
+	{
+		for (i in 0...cardOutlines.length)
+		{
+			if (expectWhat == i) 
+			{
+				cardOutlines[i].visible = true;
+			}
+			else 
+			{
+				cardOutlines[i].visible = false;
+			}
+		}
+	}
+
+	public function startLightning()
+	{
+		if (!shown)
+		{
+			stopLightning();
+			hideExcept(anim);
+			animationTimer = FlxTimer.loop
+			(
+				0.5,
+				()->
+				{
+					hideExcept(anim);
+					anim = FlxMath.wrap(anim+1,0,1);
+				},
+				0
+			);
+		}
+	}
+
+	// Since freeplay is like that, I'll just make a intro anim,
+	public function appearAnimation()
+	{
+
+	}
+
+	public function stopLightning()
+	{
+		if (animationTimer != null)
+		{
+			animationTimer.cancel();
+			animationTimer.destroy();
+			animationTimer = null;
+		}
+	}
+
+	public function hide()
+	{
+		stopLightning();
+		shown = false;
+		this.visible = false;
+	}
+
+	public function show(mult:Float = 1.0)
+	{
+		this.visible = true;
+		intendedMult = mult;
+		multProg = 0.0;
+		if (textTween != null) 
+		{
+			textTween.cancel();
+			textTween.destroy();
+			textTween = null;
+		}
+		textTween = FlxTween.num
+		(
+			0.0, 
+			intendedMult, 
+			0.5,
+			null, 
+			updateMultProg
+		);
+		startLightning();
+		shown = true;
+	}
+
+	public function updateMultProg(num:Float)
+	{
+		multProg = FlxMath.roundDecimal(num, FlxMath.bound(FlxMath.getDecimals(intendedMult),1,null));
+	}
+
+	public function update()
+	{
+		multTxt.text = FlxMath.roundDecimal(multProg, 3) + ((Math.floor(multProg) == multProg) ? '.0' : '');
+		multTxtBlurred.text = multTxt.text;
+		multTxtBlurredBG.text = multTxt.text;
+		multTxtOutline.text = multTxt.text;
+	}
+}
+
 class GammodFreeplayModule extends Module
 {
+	var multCard: GammodMultCard;
+	var modsOnTxt: FlxText;
+
+	/*
+	 * The icon that shows in the right of the text in the bottom right of the screen, indicating your type of run following this hierarchy, (1 overwrites 2 and so on...):
+	 * - 1. "Unranked", it shows if ANY unranked mods are on, no exceptions.
+	 * - 2. "Mult", if ANY mult mods are on.
+	 * - 3. "On", if ANY mod is on.
+	 */
+	var modsStateIcon: FlxSprite;
+	var modsOnTxtFX: FlxEffectSprite;
+	var modsOnRainbowFX: FlxRainbowEffect;
+	var modsOnTxtOut: FlxText;
+	var modsOnWiggle: WiggleEffectRuntime;
+
+	var pitch_music: Bool = false;
+
+	var cur_score: Null<GammodHighscore>;
+
 	var current_state: FreeplayState = null;
 	var show_character_hint: Bool = true;
 	var show_character_hint_gate: Bool = false;
 	var can_switch_mod_menu: Bool = false;
+	var block_mod_menu: Bool = false;
 	var mod_menu_open: Bool = false;
+
+	var waiting_for_intro: Bool = true;
+
+	//var backingOverride: FunkinSprite;
+
+	var pulseClock: FlxTimer;
+	var pulseStep: Int = 0;
+
+	var mod_count: Int = 0;
+
+	var wait_for_state: Bool = false;
+
+	var going_into_song:Bool = false;
+
+	var MOBILE_MULT_XOFFSET:Int = -70;
+
+	var proxyHintTxt: FlxText;
 
 	public function new()
     	{
-		super('GammodFreeplayModule');
+		super('GammodFreeplayModule', 68);
 
 		state = FreeplayState;
+
+		//backingOverride = new FunkinSprite(0,0).loadGraphic(Paths.image('ui/freeplay/backingOverride'));
 	}
 
 	private function updateCurrentState()
@@ -38,45 +298,170 @@ class GammodFreeplayModule extends Module
 	{
 		super.onUpdate(event);
 
+		if (multCard != null) multCard.update();
+
 		updateCurrentState();
 
-		if (current_state is FreeplayState)
+		if (modsOnWiggle != null) modsOnWiggle.update(event.elapsed);
+
+		/*
+		if (current_state != null)
 		{
-			if (FlxG.sound.music != null)
+			if (FlxG.debugger.drawDebug)
 			{
-				FlxG.sound.music.pitch = ModuleHandler.getModule('GammodMod_PlaybackRate').value;
+				trace(modifiersMenuHitbox != null);
+				modifiersMenuHitbox.drawDebug();
+				modifiersMenuHitbox.debugBoundingBoxColor = 0xFFFFFFFF;
+				trace('DEBUG IS ON NANFOASFJLKASIOJFPAJIOSF');
 			}
+		}
+		*/
+
+		if (!FlxG.state.subState is FreeplayState) return; // If we're at freeplay.
+		
+		if (mod_menu_open) return; // If we're EXACTLY at freeplay, not the Gammod menu.
+
+		if (current_state.controls.check('freeplay_char_select'))
+		{
+			waiting_for_intro = true;
+		}
+
+		if (proxyHintTxt != null && current_state.charSelectHint != null) // If we have the proxy, make it copy the properties of the OG text (while hiding it)
+		{
+			current_state.charSelectHint.visible = false;
+			proxyHintTxt.alpha = current_state.charSelectHint.alpha;
+			proxyHintTxt.size = current_state.charSelectHint.size;
+			proxyHintTxt.font = current_state.charSelectHint.font;
+			proxyHintTxt.x = current_state.charSelectHint.x;
+			proxyHintTxt.y = current_state.charSelectHint.y;
+		}
+
+		if (FlxG.sound.music != null && pitch_music && FlxG.sound.music._label != 'freakyMenu')
+		{
+			if (ModuleHandler.getModule('GammodPlaybackRate') != null) FlxG.sound.music.pitch = ModuleHandler.getModule('GammodPlaybackRate').value;
 		}
 		
 		if (current_state.charSelectHint.alpha < 0.4 && !show_character_hint_gate)
 		{
 			show_character_hint = !show_character_hint;
 			show_character_hint_gate = true;
-		} 
+		}
 		else if (current_state.charSelectHint.alpha > 0.6)
 		{
 			show_character_hint_gate = false;
 		}
-		if (show_character_hint)
+
+		// They fucked up THIS WHOLE SYSTEM JUST BY ADDING A COUPLE LINES IN THE handleInputs() FUNCTION!!!!!!!!!!!!!
+		// I LOVE MOD DEVELOPMENT, ITS SOOOO FUUN ;D
+		if (proxyHintTxt != null)
 		{
-			current_state.charSelectHint.text = 'Press [TAB] to change characters';
-		} 
-		else 
-		{
-			current_state.charSelectHint.text = 'Press [SHIFT] to plug mods in';
+			if (show_character_hint)
+			{
+				if (!Gammod.mobile())
+				{
+					proxyHintTxt.text = 'Press [ ' + FlxG.state.subState.controls.getDialogueNameFromControl(Control.FREEPLAY_CHAR_SELECT, true) + ' ] to change characters';
+					proxyHintTxt.color = 0xFFFFFFFF;
+					proxyHintTxt.scale.set(1,1);
+				}
+				else
+				{
+					proxyHintTxt.text = 'Tap the DJ to change characters';
+					proxyHintTxt.color = 0xFFFFFFFF;
+					proxyHintTxt.scale.set(1,1);
+				}
+			}
+			else
+			{
+				if (!can_switch_mod_menu)
+				{
+					proxyHintTxt.text = 'CHANGE "CHAR SELECT" CONTROL TO PLUG MODS IN';
+					proxyHintTxt.scale.set(0.8,0.8);
+					proxyHintTxt.color = 0xFFFF0000;
+				}
+				else
+				{
+					if (!Gammod.mobile())
+					{
+						proxyHintTxt.text = 'Press [ ' + InputUtil.getKeyName(GammodControls.getInputsFor('modifiers')[0]).toUpperCase() + ' ] to plug mods in';
+					}
+					else
+					{
+						proxyHintTxt.text = 'Tap your highscore to plug mods in';
+					}
+				}
+			}
 		}
 
-		if (FlxG.keys.justPressed.SHIFT && FlxG.state.subState.subState == null && FlxG.state.subState.capsuleOptionsMenu == null)
+		/*
+		if (current_state.currentCapsule.freeplayData != null)
+		{
+			if ((previous_currentSongId != current_state.currentCapsule.freeplayData.songId) || (previous_curVariation != current_state.currentCapsule.freeplayData.curVariation ?? 'default') || (previous_currentDifficulty != current_state.currentDifficulty) || current_state.intendedScore != previous_intendedScore)
+			{
+				var currentGammodScore = ModuleHandler.getModule('GammodHighscoreModule').getScore
+				(
+					{
+						song: current_state.currentCapsule.freeplayData.songId,
+						variation: current_state.currentCapsule.freeplayData.curVariation ?? 'default',
+						difficulty: current_state.currentDifficulty
+					}
+				);
+				if (currentGammodScore != null) 
+				{
+					current_state.intendedScore = Std.int(currentGammodScore.score * currentGammodScore.mult);
+					cur_score = currentGammodScore;
+					if (multCard != null) 
+					{
+						if (cur_score.mult != 1.0) multCard.show(cur_score.mult);
+						else multCard.hide();
+					}
+				}
+				else
+				{
+					cur_score = null;
+					if (multCard != null) multCard.hide();
+				}
+			}
+			previous_currentSongId = current_state.currentCapsule.freeplayData.songId;
+			previous_curVariation = current_state.currentCapsule.freeplayData.curVariation ?? 'default';
+			previous_currentDifficulty = current_state.currentDifficulty;
+			previous_intendedScore = current_state.intendedScore;
+		}
+		else
+		{
+			if (multCard.shown)
+			{
+				cur_score = null;
+				if (multCard != null) multCard.hide();
+			}
+			previous_currentSongId = null;
+			previous_curVariation = null;
+			previous_currentDifficulty = null;
+			previous_intendedScore = 0;
+		}
+		*/
+
+		if (!can_switch_mod_menu) return;
+		var trying_to_open:Bool = GammodControls.justPressed('modifiers');
+		if (Gammod.mobile()) trying_to_open = trying_to_open || (TouchUtil.overlaps(ModuleHandler.getModule('Gammod').modifiersMenuHitbox) && TouchUtil.justPressed);
+
+		// Terms and conditions ahh if statement
+		if (FlxG.state.subState.controls.active && FlxG.sound.music != null && FlxG.sound.music._label != 'freakyMenu' && trying_to_open && FlxG.state.subState.subState == null && FlxG.state.subState.capsuleOptionsMenu == null && !FlxG.state.subState.prepForNewRank && !block_mod_menu && !going_into_song && !waiting_for_intro)
 		{
 			if (!mod_menu_open)
 			{
 				FunkinSound.playOnce(Paths.sound('confirmMenu'));
+				HapticUtil.vibrate(0.24, 0.01, 0.06);
 				openModsMenu();
 			} else
 			{
 				closeModsMenu();
 			}
 		}
+	}
+
+	public function updateObjectsPos()
+	{
+		
 	}
 
 	public function openModsMenu()
@@ -90,17 +475,324 @@ class GammodFreeplayModule extends Module
 
 	}
 
+	public function modifyMenu(toDefault: Bool = true)
+	{
+		if (toDefault) return;
+	}
+
+	public function onStateChangeBegin(event:FreeplayScriptEvent):Void
+  	{
+		if (event.targetState is FreeplayState) return;
+
+		going_into_song = false;
+		waiting_for_intro = true;
+  	}
+
+	public function onFreeplayOutro(event:FreeplayScriptEvent):Void 
+	{
+		waiting_for_intro = true;
+		Tweens.cancel('move_multCardX');
+		Tweens.tween
+		(
+			'move_multCardX',
+			multCard,
+			{ x: FlxG.width },
+			0.2,
+			0,
+			'circIn'
+		);
+
+		Tweens.cancel('move_modsOnTxtOut');
+		Tweens.tween
+		(
+			'move_modsOnTxtOut',
+			modsOnTxtOut,
+			{ y: modsOnTxtOut.y - 20 },
+			0.1,
+			0,
+			'circInOut'
+		);
+		Tweens.cancel('move_modsOnTxt');
+		Tweens.tween
+		(
+			'move_modsOnTxt',
+			modsOnTxt,
+			{ y: modsOnTxt.y - 20 },
+			0.1,
+			0,
+			'circInOut'
+		);
+		Tweens.cancel('move_modsOnTxtOut2');
+		Tweens.tween
+		(
+			'move_modsOnTxtOut2',
+			modsOnTxtOut,
+			{ y: FlxG.height },
+			0.15,
+			0.1,
+			'circIn'
+		);
+		Tweens.cancel('move_modsOnTxt2');
+		Tweens.tween
+		(
+			'move_modsOnTxt2',
+			modsOnTxt,
+			{ y: FlxG.height },
+			0.15,
+			0.1,
+			'circIn'
+		);
+
+		Tweens.cancel('move_modsStateIcon');
+		Tweens.tween
+		(
+			'move_modsStateIcon',
+			modsStateIcon,
+			{ y: modsStateIcon.y - 14 },
+			0.07,
+			0,
+			'circInOut'
+		);
+		Tweens.cancel('move_modsStateIcon2');
+		Tweens.tween
+		(
+			'move_modsStateIcon2',
+			modsStateIcon,
+			{ y: FlxG.height - 10 },
+			0.1,
+			0.07,
+			'circIn'
+		);
+	}
+
+	public override function onCapsuleSelected(event:CapsuleScriptEvent)
+	{
+		super.onCapsuleSelected(event);
+
+		var capsule:SongMenuItem = event.capsule;
+
+		trace('Changed freeplay capsule! Should update to the new score.');
+		trace('This is the capsule: ' + event);
+
+		if (capsule.freeplayData != null)
+		{
+			var currentGammodScore = ModuleHandler.getModule('GammodHighscoreModule').getScore
+			(
+				{
+					song: capsule.freeplayData.songId,
+					variation: event.variationId ?? 'default',
+					difficulty: event.difficultyId
+				}
+			);
+			if (currentGammodScore != null)
+			{
+				if (current_state != null) current_state.intendedScore = Std.int(currentGammodScore.score * currentGammodScore.mult);
+				cur_score = currentGammodScore;
+				if (multCard != null) 
+				{
+					if (cur_score.mult != 1.0) multCard.show(cur_score.mult);
+					else multCard.hide();
+				}
+			}
+			else
+			{
+				cur_score = null;
+				if (multCard != null) multCard.hide();
+			}
+		}
+		else
+		{
+			if (multCard != null && multCard.shown)
+			{
+				cur_score = null;
+				if (multCard != null) multCard.hide();
+			}
+		}
+	}
+
+	public override function onSongSelected(event:CapsuleScriptEvent)
+	{
+		going_into_song = true;
+	}
+
 	public override function onSubStateOpenBegin(event:SubStateScriptEvent) 
 	{
 		super.onSubStateOpenBegin(event);
 
+		if (mod_menu_open) return;
+
 		updateCurrentState();
+
+		FunkinMemory.cacheTexture(Paths.getSparrowAtlas('ui/gammodMenu/tv', 'shared'));
+		FunkinMemory.cacheTexture(Paths.getAnimateAtlas('ui/gammodMenu/gammod-players', 'shared'));
+
+		pitch_music = false;
+
+		var freeplayInputs:Array<Int> = FlxG.state.subState.controls.getInputsFor(Control.FREEPLAY_CHAR_SELECT, Device.Keys);
+		var modifiersInputs:Array<Int> = GammodControls.getInputsFor('modifiers');
+		can_switch_mod_menu = !freeplayInputs.contains(modifiersInputs[0]) && !freeplayInputs.contains(modifiersInputs[1]);
+	}
+
+	public function postIntro()
+	{
+		if (multCard != null) multCard.destroy();
+		multCard = null;
+		multCard = new GammodMultCard(current_state.fpScoreDisplay.members[current_state.fpScoreDisplay.members.length-1].x - 70,175, cur_score);
+		multCard.cameras = current_state.fpScoreDisplay.cameras;
+		current_state.add(multCard);
+		block_mod_menu = false;
+		pitch_music = true;
+
+		var previous_y = multCard.y;
+		multCard.y += 20;
+		multCard.alpha = 0;
+
+		if (modsOnTxtOut != null) modsOnTxtOut.destroy();
+		modsOnTxtOut = null;
+		modsOnTxtOut = new FlxText(0,0, 0, 'MODS. ARE ON').setFormat(Paths.file('fonts/Tardling-Solid.ttf', 'FONT'), 43, 0xFF000000);
+		modsOnTxtOut.setBorderStyle(FlxTextBorderStyle.OUTLINE, 0xFF000000, 4, 4);
+		modsOnTxtOut.cameras = current_state.fpScoreDisplay.cameras;
+		modsOnTxtOut.x = (FlxG.width - modsOnTxtOut.width) - 7 + (Gammod.mobile() ? MOBILE_MULT_XOFFSET : 0);
+		modsOnTxtOut.y = (FlxG.height - modsOnTxtOut.height) - 3;
+		modsOnTxtOut.visible = false;
+		current_state.add(modsOnTxtOut);
+
+		if (modsOnTxt != null) modsOnTxt.destroy();
+		modsOnTxt = null;
+		modsOnTxt = new FlxText(0,0, 0, 'MODS. ARE ON').setFormat(Paths.file('fonts/Tardling-Solid.ttf', 'FONT'), 43, 0xFFFFFFFF);
+		modsOnTxt.cameras = current_state.fpScoreDisplay.cameras;
+		modsOnTxt.y = (FlxG.height - modsOnTxt.height) - 3;
+		modsOnTxt.visible = false;
+		current_state.add(modsOnTxt);
+
+		if (modsStateIcon != null) modsStateIcon.destroy();
+		modsStateIcon = new FlxSprite(0,0);
+		modsStateIcon.cameras = current_state.fpScoreDisplay.cameras;
+		modsStateIcon.frames = Paths.getSparrowAtlas('ui/gammodMenu/onStickerIcon');
+		modsStateIcon.animation.addByPrefix('on', 'onStickerIcon on', 8, true);
+		modsStateIcon.animation.addByPrefix('nr', 'onStickerIcon unranked', 8, true);
+		modsStateIcon.animation.addByPrefix('mult', 'onStickerIcon mult', 8, true);
+		modsStateIcon.animation.play('on', true);
+		modsStateIcon.scale.set(0.25,0.25);
+		modsStateIcon.updateHitbox();
+		modsStateIcon.x = (FlxG.width - modsStateIcon.width) + (Gammod.mobile() ? MOBILE_MULT_XOFFSET : 0);
+		modsStateIcon.y = (FlxG.height - modsStateIcon.height) - 7;
+		modsStateIcon.visible = false;
+		current_state.add(modsStateIcon);
+
+		var refBox = current_state.txtCompletion;
+
+		updateModCount();
+
+		multCard.appearing = true;
+		Tweens.cancel('move_multCard');
+		Tweens.tween
+		(
+			'move_multCard',
+			multCard,
+			{ y: previous_y },
+			1,
+			0,
+			'quadOut'
+		);
+		Tweens.cancel('fadeIn_multCard');
+		Tweens.tween
+		(
+			'fadeIn_multCard',
+			multCard,
+			{ alpha: 1 },
+			0.3,
+			0,
+			'quadIn'
+		);
+		new FlxTimer().start
+		(
+			1, 
+			()->
+			{ 
+				if (multCard != null) multCard.appearing = false;
+			}
+		);
+	}
+
+	public function onFreeplayIntroDone(event:FreeplayScriptEvent):Void 
+	{
+		updateCurrentState();
+		if (!current_state is FreeplayState)
+		{
+			wait_for_state = true;
+			return;
+		}
+		postIntro();
+		waiting_for_intro = false;
+	}
+
+	public override function updateModCount():Void
+	{
+		mod_count = ModuleHandler.getModule('GammodModifierHandler').updateModsOn();
+		if (mod_count > 0)
+		{
+			var grammar_shi:String = (mod_count>1 ? 'MODS. ARE' : 'MOD. IS');
+			modsOnTxtOut.visible = true;
+			modsOnTxt.visible = true;
+			modsStateIcon.visible = true;
+			modsOnTxtOut.text = '(' + mod_count + ') ' + grammar_shi + ' ON';
+			modsOnTxt.text = '(' + mod_count + ') ' + grammar_shi + ' ON';
+			modsOnTxtOut.x = (FlxG.width - modsOnTxtOut.width) - 80 + (Gammod.mobile() ? MOBILE_MULT_XOFFSET : 0);
+			modsOnTxt.x = (FlxG.width - modsOnTxt.width) - 80 + (Gammod.mobile() ? MOBILE_MULT_XOFFSET : 0); // (FlxG.width - modsOnTxt.width) - 12
+
+			modsStateIcon.animation.play(GammodMult.isUnranked() ? 'nr' : (GammodMult.curMult() != 1.0 ? 'mult' : 'on'));
+		}
+		else
+		{
+			modsStateIcon.visible = false;
+			modsOnTxtOut.visible = false;
+			modsOnTxt.visible = false;
+		}
+	}
+
+	public function buildHintProxy()
+	{
+		updateCurrentState();
+
+		if (proxyHintTxt != null) proxyHintTxt.destroy();
+		proxyHintTxt = new FlxText(0,0, FlxG.width - 16, 'Mod developing is so much fun!', 8, false);
+		proxyHintTxt.cameras = current_state.charSelectHint.cameras;
+		proxyHintTxt.zIndex = current_state.charSelectHint.zIndex;
+		proxyHintTxt.alignment = current_state.charSelectHint.alignment;
+		current_state.add(proxyHintTxt);
 	}
 
 	public override function onSubStateOpenEnd(event:SubStateScriptEvent) 
 	{
 		super.onSubStateOpenEnd(event);
 
-		mod_menu_open = false;
+		block_mod_menu = false;
+
+		if (mod_menu_open) return;
+
+		updateCurrentState();
+
+		trace('[GAMMOD] (OVERRIDE) Modifying the freeplay menu!');
+
+		if (wait_for_state)
+		{
+			wait_for_state = false;
+			postIntro();
+		}
+
+		super.onSubStateOpenBegin(event);
+
+		buildHintProxy();
+
+		ModuleHandler.getModule('GammodMult').calcMult();
+
+		ModuleHandler.getModule('Gammod').modifiersMenuHitbox = new FlxSprite(FlxG.width - (FullScreenScaleMode.gameNotchSize.x + 353),60).makeGraphic(700,129, 0x00FFFFFF);
+		//if (current_state.backButton != null) current_state.backButton.visible = false; What was twin tryna fix wit dat?
+		current_state.add(ModuleHandler.getModule('Gammod').modifiersMenuHitbox);
+
+		var freeplayInputs:Array<Int> = FlxG.state.subState.controls.getInputsFor(Control.FREEPLAY_CHAR_SELECT, Device.Keys);
+		var modifiersInputs:Array<Int> = GammodControls.getInputsFor('modifiers');
+		can_switch_mod_menu = !freeplayInputs.contains(modifiersInputs[0]) && !freeplayInputs.contains(modifiersInputs[1]);
 	}
 }

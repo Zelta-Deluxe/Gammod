@@ -1,0 +1,40 @@
+import funkin.modding.module.Module;
+import funkin.modding.module.ModuleHandler;
+import funkin.play.PlayState;
+import gammod.modifiers.GammodModType;
+import gammod.modifiers.GammodPlatform;
+import gammod.modifiers.GammodModifier;
+
+class GammodScrollVelocities extends GammodModifier
+{
+	public function new()
+	{
+		super('GammodScrollVelocities', GammodModType.SWITCH, {default_value: true});
+
+		display_name = 'Scroll Velocities';
+		colors = [0xff00a6ff,0xffde1200];
+		multiplier = null;
+		description = 'IF SCROLL SPEED IS ALLOWED TO CHANGE MID-SONG OR NOT';
+	}
+
+	/*public function onSongLoaded(chart:SongLoadScriptEvent) 
+	{
+		if (isDefault()) return;
+		chart.events = chart.events.filter
+		(
+			function(member)
+			{
+				return member.eventKind != 'ScrollSpeed';
+			}
+		);
+	}*/
+
+	function onSongEvent(event)
+	{
+		if (isDefault()) return;
+		if (event.eventData.eventKind == 'ScrollSpeed')
+		{
+			event.cancel();
+		}
+	}
+}

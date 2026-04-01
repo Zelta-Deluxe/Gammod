@@ -1,0 +1,69 @@
+import funkin.modding.module.Module;
+import funkin.modding.module.ModuleHandler;
+import funkin.play.PlayState;
+import flixel.math.FlxMath;
+import funkin.Conductor;
+import funkin.util.Constants;
+import flixel.FlxSprite;
+import flixel.tweens.FlxTween;
+import gammod.modifiers.GammodModType;
+import gammod.modifiers.GammodPlatform;
+import gammod.util.GammodTweenManager as Tweens;
+import gammod.modifiers.GammodModifier;
+import gammod.options.GammodOptionsModule as GammodOptions;
+import Math;
+
+class GammodHealthGain extends GammodModifier
+{
+	var pulseColor: Int = 0xFFFFFFFF;
+	var healthTween: FlxTween;
+
+	public function new()
+	{
+		super('GammodHealthGain', GammodModType.FLOATRANGE(0.0, 15.0, 0.1), {default_value: 1.0});
+
+		display_name = 'Health Gain';
+		//prefix = {value='x'; at_default=true; at_pre_default=false;};
+		colors = [0xFF0dff00,0xff00ad51];
+		multiplier = {addition: null};
+		description = "MULTIPLIES HEALTH GAINED PER NOTE";
+		prefix = {shape:'x', at_default:true};
+	}
+
+	public function onNoteHit(event) 
+	{
+		if (event.note.noteData.getMustHitNote() && value != 1.0)
+		{
+			event.healthChange *= value;
+			if (value == 0 && GammodOptions.get('modifierEffects'))
+			{
+				ModuleHandler.getModule('GammodPlayModule').leftHealthBarColor.color = pulseColor;
+				Tweens.cancel('pulse_healthBarLeft');
+				Tweens.color(
+					'pulse_healthBarLeft',
+					ModuleHandler.getModule('GammodPlayModule').leftHealthBarColor,
+					ModuleHandler.getModule('GammodPlayModule').leftHealthBarColorFinal,
+					0.3,
+					0,
+					'circIn'
+				);
+			}
+		}
+	}
+
+	override public function onUpdate(event)
+	{
+		if (value != 1.0)
+		{
+			for (holdNote in PlayState.instance.playerStrumline.holdNotes.members)
+			{
+				if (holdNote == null || !holdNote.alive) continue;
+				if (holdNote.hitNote && !holdNote.missedNote && holdNote.sustainLength > 0)
+				{
+					//trace('GAIN HEALTH HOLD NOTE');
+					PlayState.instance.health -= (Constants.HEALTH_HOLD_BONUS_PER_SECOND * event.elapsed) * (1 - value);
+				}
+			}
+		}
+	}
+}

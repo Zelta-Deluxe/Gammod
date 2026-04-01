@@ -1,0 +1,120 @@
+package gammod.modifiers.highscore;
+
+import funkin.modding.module.Module;
+import funkin.modding.module.ModuleHandler;
+import funkin.util.Constants;
+import funkin.play.PlayState;
+import flixel.FlxSprite;
+import flixel.FlxG;
+import flixel.math.FlxMath;
+import gammod.modifiers.GammodModType;
+
+class GammodMult extends Module
+{
+	final DEFAULT_SCORE_MULTIPLIER: Float = 1.0;
+	var score_multiplier: Float = 1.0;
+	var pre_score_multiplier: Float = 1.0;
+
+	var unranked: Bool = false;
+
+	public function new()
+	{
+		super('GammodMult');
+	}
+
+	/* MULTIPLIER, IN MODIIFERS, IS WRITTEN THIS WAY
+	
+	- SWTICH: multiplier = 1.5; //if on, this multiplier sums to the total
+	- LIST: mutiplier = [1.0, 1.1, null, 2.0] //each value corresponds to a different value on the default_value variable
+	- INTRANGE and FLOATRANGE: 
+		multiplier = [0.1,false,true] // If the second value is false, then the first value is multiplier added PER step.
+		multiplier = [1.5,true,true] // If the second value is true tho, then the first value is just added multiplier IF not default.
+
+		The third value indicates if the value is reversable. 
+		IF TRUE: If the range goes below default it'll turn negative, and if it goes above it'll turn positive.
+		IF FALSE: Multiplier added is just absolutized, not caring if the value is below or avobe default.
+	
+	What does 'null' mean?
+		'null' is for indicating that if that multiplied is applied, it'll invalidate the whole score.
+		An UNRANKED modifier, basically. 
+		If any UNRANKED modifiers are on, the score will show in results (along a text indicating its invalidity), but not save
+		either show on the freeplay highscore.
+	*/
+
+	public function calcMult()
+	{
+		pre_score_multiplier = score_multiplier;
+		score_multiplier = 1.0;
+		unranked = false;
+		trace('[GAMMOD] (MULT) Recalculating score multiplier.');
+		for (mod in ModuleHandler.getModule('GammodModifierHandler').registered_mods_order)
+		{
+			if (mod == 'Gammod Default' && ModuleHandler.getModule('GammodModifierHandler').registered_mods_order.length == 1) return;
+			var provided_mult:Null<Float> = getMult(ModuleHandler.getModule('GammodModifierHandler').registered_mods[mod]);
+			
+			if (provided_mult == null) 
+			{ 
+				unranked = true;
+				trace("[GAMMOD] (MULT) Unranked mod found ID'd " + '"' + ModuleHandler.getModule('GammodModifierHandler').registered_mods[mod].moduleId + '" at value "' + ModuleHandler.getModule('GammodModifierHandler').registered_mods[mod].value + '"');
+			}
+			else
+			{
+				score_multiplier += provided_mult;
+			}
+		}
+		score_multiplier = FlxMath.bound(FlxMath.roundDecimal(score_multiplier, 3), 0, null);
+	}
+
+	/*
+	 * Returns the current value of "unranked", for commodity.
+	 */
+	static public function isUnranked():Bool
+	{
+		return ModuleHandler.getModule('GammodMult').unranked;
+	}
+
+	/*
+	 * Returns the current value of "score_multiplier", for commodity.
+	 */
+	static public function curMult():Float
+	{
+		return ModuleHandler.getModule('GammodMult').score_multiplier;
+	}
+
+	static public function getMult(?modifier: Module):Null<Float>
+	{
+		if (modifier == null) return 0.0;
+		switch (modifier.type)
+		{
+			case GammodModType.SWITCH:
+				if (!ModuleHandler.getModule('GammodModifierHandler').checkDefault(modifier))
+				{
+					return modifier.multiplier;
+				}
+				else
+				{
+					return 0.0;
+				}
+			case GammodModType.LIST(values):
+				return modifier.multiplier[values.indexOf(modifier.value)];
+			case GammodModType.INTRANGE(min, max, step), GammodModType.FLOATRANGE(min, max, step):
+				if (!ModuleHandler.getModule('GammodModifierHandler').checkDefault(modifier))
+				{
+					if (modifier.multiplier.addition == null) return null;
+					if (modifier.multiplier.fromValue) return (modifier.value - 1);
+					if (modifier.multiplier.perStep == true)
+					{
+						return (!modifier.multiplier.reversable ? (modifier.value < modifier.default_value ? -1.0 : 1.0) : 1.0) * (modifier.multiplier.addition * ((modifier.value - modifier.default_value) / step));
+					}
+					else
+					{
+						return (!modifier.multiplier.reversable ? (modifier.value < modifier.default_value ? -1.0 : 1.0) : 1.0) * (modifier.multiplier.addition);
+					}
+				}
+				else
+				{
+					return 0.0;
+				}
+		}
+	}
+}

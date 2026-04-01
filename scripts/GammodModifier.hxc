@@ -1,0 +1,316 @@
+package gammod.modifiers;
+
+import funkin.modding.module.ScriptedModule;
+import funkin.modding.module.ModuleHandler;
+import gammod.modifiers.GammodModifierHandler;
+import funkin.play.PlayState;
+import haxe.ds.StringMap;
+import funkin.save.Save;
+import flixel.math.FlxMath;
+import gammod.Gammod;
+import Reflect;
+
+
+// TODO: Add default values here so lazy people don't have to worry about all those (+ some of them do not usually change).
+
+/*
+ * The class you use to make your own Gammod modifiers!
+ * Just extend from this class and config some stuff and your modifier will pop up on the modifiers menu!
+ * 
+ * As a note, modifiers are Modules, and they need to have a priority equal or higher than 1 to be properly detected and handled by the GammodModifierHandler.
+ * Since these are Modules, you can do everything you can do with a Module with a GammodModifier, so go crazy with it!
+ */
+class GammodModifier extends ScriptedModule
+{
+	/*
+	 * When a GammodModifier gets created (by the game's module system), that module is added to this list, which is later used for registry.
+	 * 
+	 * If you want to access registered Gammod modifiers BY NAME check out the ´registered_mods´ variable at GammodModifierHandler.hxc.
+	 */
+	public static var list:Array<GammodModifier> = []; // https://www.youtube.com/watch?v=qQzdAsjWGPg
+
+	/*
+	 * The name that will show in the gameplay modifiers menu, next to the icon.
+	 */
+	public var display_name: String = 'Gammod Modifier';
+
+	/*
+	 * Defines what kind of values the modifier can store. Check GammodModType in GammodModifierUtils.hxc to see modifier types.
+	 */
+	public var type: GammodModType;
+
+	/*
+	 * The value that will be assigned to ´value´ this modifier will adquire when there is no saved values for it or when the player resets it.
+	 * 
+	 * This variable's value is dependant to ´type´, like this:
+	 * - if type = SWITCH then default_value = Bool
+	 * - if type = LIST then default_value = String
+	 * - if type = INTRANGE then default_value = Int
+	 * - if type = FLOATRANGE then default_value = Float
+	 */
+	public var default_value;
+
+	/*
+	 * The current value of the modifier. This variable is accessed by the modifiers menu when you change a modifier's value.
+	 * 
+	 * This is the value that has to be used in the code to define what the modifier does.
+	 * 
+	 * This variable's value is dependant to ´type´, like this:
+	 * - if type = SWITCH then value = Bool
+	 * - if type = LIST then value = String
+	 * - if type = INTRANGE then value = Int
+	 * - if type = FLOATRANGE then value = Float
+	 */
+	public var value;
+
+	/*
+	 * A value that shows before the default, mainly to act as an "off" state for numeric range type modifiers.
+	 * Players have to double press [CTRL] to set this to default again (or reset all modifiers with [TAB]).
+	 */
+	public var pre_default:String;
+
+	/*
+	 * GammodMorpheme that defines what to add before ´value´ when it gets displayed at the menu. Does not affect ´value´.
+	 */
+	public var prefix: GammodMorpheme; // A string that will appear just before the current value.
+
+	/*
+	 * GammodMorpheme that defines what to add after ´value´ when it gets displayed at the menu. Does not affect ´value´.
+	 */
+	public var suffix: GammodMorpheme; // A string that will appear just after the current value.
+
+	/*
+	 * The accent colors a modifier has which will be used in different menus when the modifier is displayed/selected.
+	 */
+	public var colors: Array<Int> = [0xFFFFFFFF, 0xFFFFFFFF];
+
+	/*
+	 * The multiplier this modifier adds to the total. 
+	 * No, this does not multiply the total multiplier, neither it replaces it; 
+	 * it just adds to the total mult along other modifiers.
+	 * A single modifier can kill your score though, by making it unranked (score does not save).
+	 * 
+	 * To make a certain option unranked, replace the mult value of that option with ´null´.
+	 * How to make an option not give any multiplier then? Just set that value to ´0.0´.
+	 * 
+	 * This variable's value is dependant to ´type´, like this:
+	 * - if type = SWITCH then value = Float (mult applies if the modifier's value is different from default)
+	 * - if type = LIST then value = Array<Float> (each value in the array will get applied respective to the list provided in ´type´)
+	 * - if type = INTRANGE / FLOATRANGE then value = 
+	 * {
+	 * 	fromValue: Bool (if true, the added multiplier will be generated directly from the value).
+	 * 	addition: Float (the mult value we'll work with, the next values affect it too).
+	 * 	reversable: Bool (if false, getting below ´default_value´ will not revert the multiplier; ´addition´ will not get inverted).
+	 * 	perStep: Bool (if true, multiplier grows the further ´value´ gets from ´default_value´).
+	 * }
+	 */
+	public var multiplier;
+
+	/*
+	 * A brief description of what the modifier does, to be displayed in the modifiers menu.
+	 */
+	public var description: String = 'GAMMOD MODIFIER';
+
+	/*
+	 * A list of platfomrs this modifier will not appear in. 
+	 * If you want to hide this modifier everywhere, 
+	 * just add both ´GammodPlatform.MOBILE´ and ´GammodPlatform.PC´.
+	 */
+	public var banned_platforms: Array<GammodPlatform> = [];
+
+	/*
+	 * When trying to play any of the songs in this list, the modifier will revert to its default value.
+	 * ID's are written as:
+	 * songId-variation
+	 * 
+	 * darnell-bf
+	 * pico-pico
+	 * cocoa-erect
+	 * ...
+	 */
+	public var banned_songs: Array<String> = [];
+
+	/*
+	 * Helper variable that will be true for a frame as soon as you change the difficulty in the Pause Menu and can be used in onSongRetry() to define more precice behaviour.
+	 */
+	var difficultyChanged:Bool = false;
+	var firstDiffChangeDone:Bool = false;
+
+	override function new(?id:String, ?_type:GammodModType, ?defaults)
+	{
+		var foundUniqueID:Bool = false;
+		var indexOfID:Int = 1;
+		var indexOutput:String = id;
+		while (!foundUniqueID)
+		{
+			// We do this until we find a unique ID for our modifier (that way modifiers can share names and don't care for normal modules).
+			if (indexOfID > 1)
+			{
+				indexOutput = id + indexOfID;
+			}
+			if (!ModuleHandler.moduleCache.exists(indexOutput))
+			{
+				id = indexOutput;
+				foundUniqueID = true;
+			}
+			else
+			{
+				indexOfID += 1;
+			}
+		}
+
+		super(id, 2);
+
+		var banned: Bool = false;
+
+		for (platform in banned_platforms)
+		{
+			switch (platform)
+			{
+				case GammodPlatform.MOBILE(hard_ban):
+					if (Gammod.mobile() && hard_ban)
+					{
+						banned = true;
+					}
+				case GammodPlatform.PC(hard_ban):
+					if (!Gammod.mobile() && hard_ban)
+					{
+						banned = true;
+					}
+			}
+		}
+
+		if (id != 'gammod.modifiers.GammodModifier') 
+		{
+			if (!banned)
+			{
+				list.push(this);
+			}
+			else
+			{
+				active = false;
+				return;
+			}
+		}
+		else
+		{
+			return;
+		}
+
+		state = PlayState; // If you want your modifier to do stuff outside PlayState too, just set this to ´null´ after you call super().
+
+		type = _type;
+		if (Save.instance.getModOptions('Gammod')?.modifiers == null) Save.instance.getModOptions('Gammod').modifiers = new StringMap();
+		var remembered_value = Save.instance.getModOptions('Gammod').modifiers.get(id);
+		pre_default = defaults.pre_default;
+		default_value = defaults.default_value;
+		switch (type) 
+		{
+			// Checking if the remembered value makes sense or not lol
+			// Helps transition modifiers from version from version
+
+			case GammodModType.SWITCH:
+				if (![false, true].contains(remembered_value)) remembered_value = pre_default ?? default_value;
+			case GammodModType.LIST(values):
+				if (!values.contains(remembered_value)) remembered_value = pre_default ?? default_value;
+			case GammodModType.INTRANGE(min, max, step), GammodModType.FLOATRANGE(min, max, step):
+				if (!remembered_value is Int || !remembered_value is Float) remembered_value = pre_default ?? default_value;
+				FlxMath.bound(remembered_value, min, max);
+		}
+		if (pre_default != null)
+		{
+			value = remembered_value ?? defaults.pre_default; //why the fuck wont "??" work, wasnt that "if null then pick this other one"?.
+		}
+		else
+		{
+			//trace('IM $id AND THE VALUE I SHOULD APPLY IS: ' + ((remembered_value != null) ? remembered_value : defaults.default_value));
+			value = remembered_value ?? defaults.default_value;
+		}
+	}
+
+	public function onUpdate(event)
+	{
+		if (playstate() == null) return;
+
+		if (difficultyChanged) firstDiffChangeDone = true;
+
+		difficultyChanged = false;
+
+		if (playstate().previousDifficulty != playstate().currentDifficulty)
+		{
+			difficultyChanged = true;
+		}
+	}
+
+	/*
+	 * Returns a modifier by ModuleID.
+	 * Difference from ModuleHandler.getModule() is that this will not return the module if it's not registered by Gammod.
+	 */
+	static public function get(modifierId:String):Null<GammodModifier>
+	{
+		var output:GammodModifier = ModuleHandler.getModule(modifierId);
+		if (!GammodModifier.list.contains(output) && output != null) output = null; // If we got a Module, but its not registered, then its not a GammodModifier... traitor...
+		return output;
+	}
+
+	/*
+	 * Check whether the modifier is in its default value or not.
+	 */
+	public function isDefault():Bool
+	{
+		if (pre_default != null)
+		{
+			if (Std.string(value) != Std.string(pre_default)) return false;
+		}
+		else
+		{
+			switch(type)
+			{
+				case GammodModType.SWITCH:
+					if (value != default_value)
+					{
+						return false;
+					}
+				default:
+					if (value != default_value)
+					{
+						return false;
+					}
+			}
+		}
+		return true;
+	}
+
+	/*
+	 * To quickly check if we're on mobile or not, to define platform-specific behaviour for modifiers.
+	 */
+	public function isMobile():Bool
+	{
+		return Gammod.mobile();
+	}
+
+	/*
+	 * To quickly access the current PlayState instance.
+	 * Remember to check if it's null before using in case your modifier does stuff outside PlayState.
+	 */
+	public function playstate():PlayState
+	{
+		return PlayState.instance;
+	}
+
+	/*
+	 * To quickly access the current instance of the PauseSubState.
+	 * Remember to check if it's null before using in case the menu is not open.
+	 */
+	public function pause():PauseSubState
+	{
+		return FlxG.state.subState;
+	}
+
+	override public function toString():String
+	{
+		return 'GammodModifier($moduleId of type $type, current value $value)';
+	}
+
+	// TODO: ADD A WHOLE BUNCH OF COOL FUNCTIONS TO USE IN CUSTOM MODIFIER BEHAVIOUR
+}

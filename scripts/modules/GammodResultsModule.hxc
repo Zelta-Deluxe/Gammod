@@ -1,0 +1,572 @@
+package gammod;
+
+import funkin.play.ResultState;
+import funkin.modding.module.Module;
+import funkin.modding.module.ModuleHandler;
+import flixel.group.FlxTypedSpriteGroup;
+import flixel.FlxSprite;
+import flixel.util.FlxColor;
+import flixel.text.FlxText;
+import flixel.text.FlxTextBorderStyle;
+import funkin.Assets;
+import funkin.Paths;
+import funkin.save.Save;
+import funkin.graphics.FunkinSprite;
+import flixel.util.FlxTimer;
+import funkin.graphics.FunkinSprite;
+import funkin.audio.FunkinSound;
+import funkin.Highscore;
+import funkin.ui.FullScreenScaleMode;
+import flixel.math.FlxMath;
+import funkin.graphics.shaders.AdjustColorShader;
+import flixel.tweens.FlxEase;
+import flixel.tweens.FlxTween;
+import funkin.Assets;
+import flixel.FlxG;
+import funkin.play.scoring.Scoring;
+import gammod.util.GammodTweenManager as Tweens;
+import Math;
+import Std;
+import Array;
+
+// Remember to do this first.
+// When we reach `ResultState`, you HAVE to put the FNF' highscore to the orignal one again.
+
+enum ModEvent
+{
+	MULT(amount:Float); // Adds mult to the total mult count + mult icon.
+	UNRANKED; // Makes the unranked popup show up + unranked icon.
+	NONE; // Does not add any extra events to the timeline.
+	END;
+}
+
+class GammodResultsIcon extends FlxSprite
+{
+	var assigned_mod:Module;
+
+	// STARTING SCALE: 20
+	// END SCALE: 45
+
+	var og_width:Int = 38;
+	var og_height:Int = 38;
+
+	var scaleTween:FlxTween;
+	var brightnessTween:FlxTween;
+
+	public function new(x:Int, y:Int, ?modifier:Module)
+	{
+		super(x,y);
+
+		this.shader = new AdjustColorShader();
+		assigned_mod = modifier;
+
+		this.antialiasing = false;
+		this.visible = false;
+
+		if (modifier != null)
+		{
+			if (Assets.exists(Paths.image('ui/gammodMenu/icons/' + modifier.moduleId))) 
+			{
+				this.loadGraphic(Paths.image('ui/gammodMenu/icons/' + modifier.moduleId));
+				//trace('FOUND IMAGE!!!');
+			}
+			else
+			{
+				this.loadGraphic(Paths.image('ui/gammodMenu/icons/Default'));
+				//trace("dind't...??1!?");
+			}
+		}
+		else
+		{
+			this.loadGraphic(Paths.image('ui/gammodMenu/icons/Default'));
+			//trace("Not a modifier, it seems. Defaulting the image!");
+		}
+		og_width = this.width;
+		og_height = this.height;
+		this.scale.set((45/og_width), (45/og_height));
+	}
+
+	public function changeBrightness(new_brightness:Float)
+	{
+		shader.brightness = new_brightness;
+	}
+
+	public function appear()
+	{
+		var iconShader = shader;
+		this.visible = true;
+		shader.brightness = 250;
+		this.scale.set((20/og_width), (20/og_height));
+		brightnessTween = FlxTween.num
+		(
+			250,
+			0,
+			0.4,
+			{
+				ease: FlxEase.circIn,
+			},
+			changeBrightness
+		);
+		scaleTween = FlxTween.tween
+		(
+			this.scale, 
+			{x:(50/og_width), y:(50/og_height)}, 
+			0.2,
+			{
+				ease: FlxEase.expoOut,
+				onComplete: () ->
+				{
+					this.scaleTween = FlxTween.tween
+					(
+						this.scale, 
+						{x:(45/og_width), y:(45/og_height)}, 
+						0.07,
+						{
+							ease: FlxEase.circIn
+						}
+					);
+				}
+			}
+		);
+	}
+}
+
+class GammodResultsModule extends Module
+{
+	public var modifierIcons:Array<GammodResultsIcon> = [];
+	public var modifierTypeIcons:Array<FunkinSprite> = [];
+	var iconGroup_x:Int = 0;
+	var multProg:Float = 0;
+	var intendedMult:Float = 1.0;
+	var multTween:FlxTween;
+	var multTxt:FlxText;
+	var multSound:FunkinSound;
+	var previous_multTxt_text:String;
+
+	public function new()
+	{
+		super('GammodResultsModule');
+	}
+
+	override public function onSubStateOpenBegin(event)
+	{
+		//trace('Started opening SubState.');
+		if (event.targetState is ResultState)
+		{
+			trace('[GAMMOD] We at ResultState.');
+
+			var resultsParams:GammodResultsParams = ModuleHandler.getModule('GammodPlayModule').resultsParams;
+			var resultsState:ResultState = event.targetState;
+			if (ModuleHandler.getModule('GammodMult').score_multiplier != 1.0)
+			{
+				event.targetState.score.scoreStart = 0;
+				event.targetState.score.scoreShit = Std.int(resultsParams.resultingScore.score * resultsParams.resultingScore.mult);
+			}
+		}
+	}
+
+	function getDelayTime(lpi:Int):Float {
+		var lpiStart = 5;        // a partir de aquí empieza a escalar
+		var maxDelay = 0.5 * lpi;
+		var minDelay = 0.2 * lpi;
+		var k = 0.05;
+
+		if (lpi <= lpiStart) {
+		   return maxDelay;
+		}
+
+		var scaledLpi = lpi - lpiStart;
+
+		return minDelay + (maxDelay - minDelay) * Math.exp(-k * scaledLpi);
+	}
+
+	override public function onSubStateOpenEnd(event)
+	{
+		//trace('Finished opening SubState.');
+		if (event.targetState is ResultState)
+		{
+			trace('[GAMMOD] We at ResultState.');
+
+			if (multSound != null)
+			{
+				multSound.destroy();
+				multSound = null;
+			}
+			multSound = new FunkinSound();
+			multSound.loadEmbedded(Paths.sound('multTween'));
+			multSound.volume = 2;
+			FlxG.sound.defaultSoundGroup.add(multSound);
+    			FlxG.sound.list.add(multSound);
+
+			var resultsParams:GammodResultsParams = ModuleHandler.getModule('GammodPlayModule').resultsParams;
+			var resultsState:ResultState = event.targetState;
+
+			//trace('------- RESULTING SCORE IS: ' + resultsParams.resultingScore);
+
+			//resultsState.score.scoreShit = Std.int(resultsParams.resultingScore.score * resultsParams.resultingScore.mult);
+			resultsState.params.isNewHighscore = resultsParams.wasHighscore;
+			//trace(resultsParams.wasHighscore ? 'THIS WAS A HIGHSCORE NOTIFIED BY GAMMOD' : 'NOPE, NO HIGHSCORE');
+
+			if (ModuleHandler.getModule('GammodMult').score_multiplier != 1)
+			{
+				var scoreNumbers = resultsState.score.group.members;
+				var lastScrNum = scoreNumbers[scoreNumbers.length-1];
+				var multPos:Int = (lastScrNum.x - 25);
+
+				var multLight:FlxSprite = new FlxSprite(multPos, 580);
+				multLight.frames = Paths.getSparrowAtlas('ui/resultsScreen/lightning');
+				multLight.animation.addByPrefix('intro', 'lightning intro', 8, true);
+				multLight.animation.addByPrefix('idle', 'lightning idle', 8, true);
+				multLight.animation.play('idle', true);
+				multLight.antialiasing = true;
+				multLight.visible = false;
+				multLight.scale.set(0.5,0.5);
+				multLight.cameras = [resultsState.cameraEverything];
+				multLight.zIndex = resultsState.score.zIndex-2;
+				resultsState.insert(resultsState.members.indexOf(resultsState.score)-2, multLight);
+
+				multTxt = new FlxText(multPos + 116,650, 0, 'x 0.0', 0, true).setFormat(Paths.file('fonts/Tardling-Solid.ttf', 'FONT'), 46, 0xFFB1B1B1);
+				multTxt.setBorderStyle(FlxTextBorderStyle.OUTLINE, 0xFF313131, 2.5, 4);
+				multTxt.antialiasing = true;
+				multTxt.visible = false;
+				multTxt.cameras = [resultsState.cameraEverything];
+				multTxt.zIndex = resultsState.score.zIndex-1;
+				resultsState.insert(resultsState.members.indexOf(resultsState.score)-1, multTxt);
+
+				new FlxTimer().start
+				(
+					37 / 24, 
+					_ -> 
+					{
+						multLight.visible = true;
+						multTxt.visible = true;
+						FunkinSound.playOnce(Paths.sound('resultsSpark'));
+					}
+				);
+			}
+
+			var isModifiedRun: Bool = ModuleHandler.getModule('GammodPlayModule').resultsParams != null && ModuleHandler.getModule('GammodPlayModule').resultsParams.modifiedRun;
+			
+			// X POSITION IF THE RANK TEXT IS PRESENT: FlxG.width - 100
+			// X POSITION IF THE RANK TEXT IS PRESENT: FlxG.width - 55
+
+			modifierIcons = [];
+			modifierTypeIcons = [];
+			var active_mods_raw:Array<Module> = ModuleHandler.getModule('GammodModifierHandler').getActive();
+			var active_mods:Array<Module> = new Array();
+			/*
+			for (i in 1...20)
+			{
+				active_mods.push(null);
+			}*/
+			var event_index:Int = 0;
+			var current_loop:Int = 0;
+			var next_event:ModEvent = ModEvent.NONE;
+			iconGroup_x = FlxG.width - 55;
+			multProg = 0;
+			intendedMult = 1.0;
+
+			var unranked:Array<Module> = new Array();
+			var mults:Array<Module> = new Array();
+			var norms:Array<Module> = new Array();
+			for (mod in active_mods_raw)
+			{
+				var damult = GammodMult.getMult(mod);
+				if (damult != null && damult != 0.0)
+				{
+					mults.push(mod);
+				}
+				else if (damult == null)
+				{
+					unranked.push(mod);
+				}
+				else
+				{
+					norms.push(mod);
+				}
+			}
+			active_mods = mults.concat(unranked).concat(norms);
+
+			//trace('---------- ACTIVE MODS RAW HERE: ' + active_mods_raw);
+			//trace('---------- ACTIVE MODS HERE: ' + active_mods);
+			//trace('---------- ACTIVE NORM MODS HERE: ' + norms);
+
+			// Weird ahh statement i made cuz you can't add loops to a for loop mid-goon
+			while (next_event != ModEvent.END)
+			{
+				if (event_index > (active_mods.length-1)) 
+				{
+					next_event = ModEvent.END; // No mods left to analize, we done gng!
+					//trace('SE SUPONE QUE DEBERIA CERRAR');
+					break;
+				}
+
+				var evi:Int = event_index;
+				var lpi:Int = current_loop;
+				var indexShiPos:Int = FlxG.height - ((event_index + 1) * 55);
+				var delayTime:Float = getDelayTime(lpi);
+				trace('--------- Loop number #' + current_loop);
+				trace('--------- At mod #' + evi);
+				switch (next_event)
+				{
+					case ModEvent.NONE:
+						trace('-- Registered Modifier event, (' + active_mods[evi]?.moduleId ?? 'default' + ').');
+						var modifierMult:Null<Float> = GammodMult.getMult(active_mods[evi]);
+						trace('ITS MULTIPLIER IS: ' + modifierMult);
+						if (modifierMult == null)
+						{
+							trace('Found an unranked modifier.');
+							next_event = ModEvent.UNRANKED; // Add the unranked event.
+						}
+						else if (modifierMult == 0)
+						{
+							trace('Found a normal ass modifier.');
+							next_event = ModEvent.NONE; // Add no event, just next modifier.
+						}
+						else
+						{
+							trace('Found a modifier that adds mult.');
+							next_event = ModEvent.MULT(modifierMult); // Add the mult event, with the desired mult.
+						}
+						new FlxTimer().start
+						(
+							(37 / 24) + delayTime,
+							_ -> 
+							{
+								var newIcon:GammodResultsIcon = new GammodResultsIcon(iconGroup_x, indexShiPos, active_mods[evi]);
+								newIcon.cameras = [resultsState.cameraEverything];
+								newIcon.zIndex = resultsState.songName.zIndex-2;
+								resultsState.insert(resultsState.members.indexOf(resultsState.songName)-2, newIcon);
+								newIcon.appear();
+								modifierIcons.push(newIcon);
+
+								FunkinSound.playOnce(Paths.sound('normalModifier')).pitch = FlxMath.bound(1 + (0.05 * evi), 1, 3);
+								trace('Executed Modifier event added by ' + active_mods[evi]);
+							}
+						);
+					case ModEvent.UNRANKED:
+						trace('-- Registered Unranked event.');
+						next_event = ModEvent.NONE;
+						new FlxTimer().start
+						(
+							(37 / 24) + delayTime,
+							_ -> 
+							{
+								var newTypeIcon:FunkinSprite = new FunkinSprite(iconGroup_x - 50, indexShiPos);
+								newTypeIcon.frames = Paths.getSparrowAtlas('ui/resultsScreen/unrankedResults');
+								newTypeIcon.animation.addByPrefix('appear', 'unrankedResults appear', 20, false);
+								newTypeIcon.cameras = [resultsState.cameraEverything];
+								newTypeIcon.zIndex = resultsState.songName.zIndex-1;
+								newTypeIcon.antialiasing = false;
+								newTypeIcon.scale.set((45/38), (45/38));
+								resultsState.insert(resultsState.members.indexOf(resultsState.songName)-1, newTypeIcon);
+								modifierTypeIcons.push(newTypeIcon);
+
+								newTypeIcon.animation.play('appear');
+
+								FunkinSound.playOnce(Paths.sound('unrankedModifier'));
+								trace('Executed Unranked event added by ' + active_mods[evi]);
+							}
+						);
+					case ModEvent.MULT(amount):
+						trace('-- Registered Mult event.');
+						next_event = ModEvent.NONE;
+						new FlxTimer().start
+						(
+							(37 / 24) + delayTime,
+							_ -> 
+							{
+								var newTypeIcon:FunkinSprite = new FunkinSprite(iconGroup_x - 50, indexShiPos);
+								newTypeIcon.frames = Paths.getSparrowAtlas('ui/resultsScreen/multResults');
+								newTypeIcon.animation.addByPrefix('appear', 'multResults appear', 20, false);
+								newTypeIcon.cameras = [resultsState.cameraEverything];
+								newTypeIcon.zIndex = resultsState.songName.zIndex-1;
+								newTypeIcon.antialiasing = false;
+								newTypeIcon.scale.set((45/38), (45/38));
+								resultsState.insert(resultsState.members.indexOf(resultsState.songName)-1, newTypeIcon);
+								modifierTypeIcons.push(newTypeIcon);
+
+								newTypeIcon.animation.play('appear');
+
+								if (multTxt != null)
+								{
+									trace('TWEENING THE TEXT TWIN!');
+									if (multTween != null && multTween.active)
+									{
+										multTween.cancel();
+										multTween.destroy();
+										multTween = null;
+									}
+									intendedMult += amount;
+									multTween = FlxTween.num
+									(
+										0.0, 
+										intendedMult, 
+										(37 / 24),
+										{
+											ease: FlxEase.expoOut
+										},
+										updateMultProg
+									);
+								}
+								FunkinSound.playOnce(Paths.sound('multModifier'));
+								trace('Executed Multiplier event added by ' + active_mods[evi]);
+							}
+						);
+					case ModEvent.END:
+						break;
+				}
+
+				var check_content:Bool = false;
+				switch (next_event)
+				{
+					case ModEvent.NONE:
+						event_index++;
+						trace('Next is NONE, incremented index');
+					case ModEvent.MULT(amount):
+						check_content = true;
+						trace('Next is MULT(' + amount + ')');
+					case ModEvent.UNRANKED:
+						check_content = true;
+						trace('Next is UNRANKED');
+					case ModEvent.END:
+						break;
+				}
+
+				//trace('event_index: ' + event_index);
+				//trace('(active_mods.length-1): ' + (active_mods.length-1));
+				//trace('check_content: ' + check_content);
+
+				if (event_index > (active_mods.length-1)) 
+				{
+					next_event = ModEvent.END; // No mods left to analize, we done gng!
+					trace('SE SUPONE QUE DEBERIA CERRAR');
+					break;
+				}
+
+				current_loop++;
+			}
+
+			var rank:ScoringRank = Scoring.calculateRank(resultsState.params.scoreData);
+			new FlxTimer().start
+			(
+				0.05,
+				_ ->
+				{
+					new FlxTimer().start
+					(
+						(getFlashDelay(rank) + (30 / 24)) - 1.5,
+						_ -> 
+						{
+							if (modifierIcons.length > 0)
+							{
+								Tweens.cancel('makeSpace_resultIcons');
+								Tweens.tween(
+									'makeSpace_resultIcons',
+									modifierIcons[0],
+									{ x: FlxG.width - 100 },
+									0.5,
+									0,
+									'expoOut'
+								);
+							}
+						}
+					);
+				}
+			);
+			
+			var isHighscore: Bool = ModuleHandler.getModule('GammodPlayModule').resultsParams != null && ModuleHandler.getModule('GammodPlayModule').resultsParams.wasHighscore;
+			trace(ModuleHandler.getModule('GammodPlayModule').resultsParams == null || !isModifiedRun || !isHighscore);
+			if (ModuleHandler.getModule('GammodPlayModule').resultsParams == null || !isModifiedRun || !isHighscore) return;
+
+			// Saving... don't close the game ahh
+			trace('[GAMMOD] (SCORES + SAVES) Resaving score for song.');
+
+			var needs_prefix: Bool = !(resultsParams.internalSong.variation == null || resultsParams.internalSong.variation == 'default' || resultsParams.internalSong.variation == 'erect');
+			
+			// WHO, WHO BLACKLISTED setSongScore() FOR MODDERS, WHO COMMITTED THAT
+			/*Save.instance.setSongScore(resultsParams.internalSong.song, resultsParams.internalSong.difficulty + (needs_prefix ? '-' + resultsParams.internalSong.variation : ''), 
+			{
+				score: resultsParams.internalScore,
+				tallies:
+				{
+					sick: Highscore.tallies.sick,
+					good: Highscore.tallies.good,
+					bad: Highscore.tallies.bad,
+					shit: Highscore.tallies.shit,
+					missed: Highscore.tallies.missed,
+					combo: Highscore.tallies.combo,
+					maxCombo: Highscore.tallies.maxCombo,
+					totalNotesHit: Highscore.tallies.totalNotesHit,
+					totalNotes: Highscore.tallies.totalNotes,
+					isNewHighscore: false
+				}
+			});*/
+		}
+	}
+
+	public function updateMultProg(num:Float)
+	{
+		multProg = FlxMath.roundDecimal(num, FlxMath.bound(FlxMath.getDecimals(intendedMult),1,null));
+	}
+
+	// I really don't know why the fuck i cant import ScoringRank and use it, but at least it lets itself be treated as a string.
+	public function getFlashDelay(rank:String)
+	{
+		switch (rank)
+		{
+			case 'PERFECT_GOLD' | 'PERFECT':
+			// return 2.5;
+				return 129 / 24;
+			case 'EXCELLENT':
+				return 122 / 24;
+			case 'GREAT':
+				return 109 / 24;
+			case 'GOOD':
+				return 107 / 24;
+			case 'SHIT':
+				return 186 / 24;
+			default:
+				return 3.5;
+		}
+	}
+
+	override public function onUpdate()
+	{
+		if (!FlxG.state.subState is ResultState) return;
+		//trace(FlxG.state.subState.scoreShit);
+		if (multTxt != null) 
+		{
+			multTxt.text = 'x ' + FlxMath.roundDecimal(multProg, 3) + ((Math.floor(multProg) == multProg) ? '.0' : '');
+			if (multTxt.text != previous_multTxt_text)
+			{
+				multSound.pitch = multProg;
+				multSound.play();
+			}
+			previous_multTxt_text = multTxt.text;
+		}
+		if (modifierIcons.length > 0)
+		{
+			var iconAnchorX:Int = modifierIcons[0].x;
+			for (icon in 1...modifierIcons.length)
+			{
+				modifierIcons[icon].x = iconAnchorX;
+			}
+			if (modifierTypeIcons.length > 0)
+			{
+				//trace('MODIFIER TYPE ICONS ARE ACTIVE');
+				for (icon in modifierTypeIcons)
+				{
+					icon.x = modifierIcons[0].x - 50;
+				}
+			}
+		}
+		if (FlxG.keys.justPressed.Y)
+		{
+			for (mod in modifierIcons)
+			{
+				trace(mod.y);
+			}
+		}
+	}
+}

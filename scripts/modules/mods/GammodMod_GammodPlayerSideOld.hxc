@@ -1,0 +1,294 @@
+import funkin.modding.module.Module;
+import funkin.modding.module.ModuleHandler;
+import funkin.play.PlayState;
+import gammod.modifiers.GammodModType;
+import gammod.modifiers.GammodPlatform;
+import gammod.modifiers.GammodModifier;
+import flixel.ui.FlxBar;
+import flixel.ui.FlxBarFillDirection;
+import funkin.play.components.HealthIcon;
+import flixel.math.FlxMath;
+import funkin.ui.FullScreenScaleMode;
+import flixel.math.FlxPoint;
+import funkin.data.song.NoteParamData;
+import gammod.Gammod;
+import funkin.play.character.CharacterType;
+
+// ANOTHER KNOWN BUG:
+// Animations seem to bug and get longer than they should if no notes are pressed
+// I guess it happens when both sides play, maybe it even has something to do with note recycling
+
+// TODO:
+// --- MUTED VOCAL TRACK WHEN YOU MISS IS WRONG, CHECK THAT
+// --- CHANGE STRUMLINE POSITIONS
+// --- CHANGE HEALTHBAR ORIENTATION
+// --- COUNT THE OTHER NOTE EVENTS TOO (like misses, ghost tapping, etc)
+// -? MAYBE EVEN DO THE EASTER EGG THING BUT WITH THE OPPONENT ICON
+// - REMEMBER TO CHECK IF WE'RE ON MOBILE TO NOT DO STRUMLINE STUFF
+// - HAVE IN MIND INDIVIDUAL SCROLL SPEED IN EACH STRUM
+//
+// - ADD A 'BOTH' MODE, which lets you play both sides in the same chart
+
+// CHECKLIST FOR PLAYTESTERS:
+// - Play around half a song, go to the pause and restart. Does the chart match the vocals or are some notes in the incorrect side?
+
+class GammodPlayerSideOld // Just saving code
+{
+	override public function new()
+	{
+		super('GammodPlayerSideOld', GammodModType.LIST(['NORMAL', 'OPPOSITE']), {default_value:'NORMAL'});
+
+		display_name = "Player's Side";
+		colors = [0xff9cc2ff,0xff415ee0];
+		multiplier = [0.0, 0.0, 0.0];
+		description = 'DECIDE WHICH SIDE YOU PLAY';
+
+		priority = 69; //heh, nice
+	}
+
+	public function onStateChangeEnd(event:StateChangeScriptEvent)
+	{
+		if (isDefault()) return;
+		if (event.targetState is PlayState)
+		{
+			switch (value)
+			{
+				case 'OPPOSITE':	
+					event.targetState.scoreText.x = (event.targetState.healthBarBG.x + 90);
+					event.targetState.healthBar.fillDirection = FlxBarFillDirection.LEFT_TO_RIGHT;
+					event.targetState.iconP1.autoUpdate = false;
+					event.targetState.iconP2.autoUpdate = false;
+
+					//var player = event.targetState.currentStage.getPlayer();
+					//var opponent = event.targetState.currentStage.getOpponent();
+					//player.characterType = CharacterType.DAD;
+					//player.characterType = CharacterType.DAD;
+					opposeStrumlines();
+			}
+		}
+	}
+
+	public function onSongLoaded(chart:SongLoadScriptEvent) 
+	{
+		switch (value)
+		{
+			case 'OPPOSITE':
+				opposeChart(chart);
+		}
+	}
+
+	public function onSongRetry(event:SongRetryEvent) 
+	{
+		switch (value)
+		{
+			case 'OPPOSITE':
+				opposeChart(PlayState.instance.currentChart);
+		}
+	}
+
+	public function onCountdownStart(event)
+	{
+		if (!isDefault()) playstate().vocals.opponentVolume = 1;
+	}
+
+	public function onNoteHit(event:HitNoteScriptEvent)
+	{
+		switch (value)
+		{
+			case 'OPPOSITE':
+				event.note.noteData.data = giveOppositeData(event.note.noteData.data);
+				setOpposed(event.note);
+				playstate().vocals.opponentVolume = 1;
+		}
+	}
+
+	public function onNoteMiss(event:NoteScriptEvent)
+	{
+		switch (value)
+		{
+			case 'OPPOSITE':
+				event.note.noteData.data = giveOppositeData(event.note.noteData.data);
+				setOpposed(event.note);
+				playstate().vocals.opponentVolume = 0;
+		}
+	}
+
+	public function setOpposed(note)
+	{
+		var opposed = findOpposedParam(note);
+		if (opposed == null)
+		{
+			event.note.params.push
+			(
+				new NoteParamData('opposed', true)
+			);
+		}
+		else
+		{
+			opposed.value = true;
+		}
+	}
+
+	public function onNoteHoldDrop(event:HoldNoteScriptEvent)
+	{
+		switch (value)
+		{
+			case 'OPPOSITE':
+				playstate().vocals.opponentVolume = 0;
+				//event.holdNote.noteData.data = giveOppositeData(event.holdNote.noteData.data);
+		}
+	}
+
+	public function onNoteGhostMiss(event:GhostMissNoteScriptEvent)
+	{
+		switch (value)
+		{
+			case 'OPPOSITE':
+				event.playAnim = false;
+				playstate().vocals.opponentVolume = 0;
+		}
+	}
+
+	/*
+	 * Slice of code ported from source code for maximum accurracy, but modified to work when you're the enemy.
+	 */
+	public function updateIconPosition(iconId:Int):Void
+	{
+		if (playstate() != null)
+		{
+			switch (iconId)
+			{
+				case 0: // Boyfriend
+					playstate().iconP1.updateHealthIcon(2 - playstate().healthBar.value);
+					playstate().iconP1.x = playstate().healthBar.x
+	 				 + (playstate().healthBar.width * (FlxMath.remapToRange(2 - playstate().healthBar.value, 0, 2, 100, 0) * 0.01) - HealthIcon.POSITION_OFFSET);
+					playstate().iconP1.y = playstate().healthBar.y - (playstate().iconP1.height / 2);
+				case 1: // Dad
+					playstate().iconP2.updateHealthIcon(playstate().healthBar.value);
+					playstate().iconP2.x = playstate().healthBar.x
+					  + (playstate().healthBar.width * (FlxMath.remapToRange(2 - playstate().healthBar.value, 0, 2, 100, 0) * 0.01))
+					  - (playstate().iconP2.width - HealthIcon.POSITION_OFFSET);
+					playstate().iconP2.y = playstate().healthBar.y - (playstate().iconP2.height / 2);
+			}
+		}
+	}
+
+	public function onUpdate(event)
+	{
+		if (isDefault()) return;
+
+		playstate().vocals.playerVolume = 1;
+		
+		if (playstate()?.iconP1 != null) updateIconPosition(0);
+		if (playstate()?.iconP2 != null) updateIconPosition(1);
+	}
+
+	public function opposeNote(note)
+	{
+		note.data = giveOppositeData(note.data);
+	}
+
+	/*
+	 * Enemy notes for the player, player notes for the enemy
+	 */
+	public function opposeChart(chart:SongDifficulty)
+	{
+		for (note in chart.notes)
+		{
+			var opposed = findOpposedParam(note);
+			if (opposed != null)
+			{
+				if (opposed.value)
+				{
+					trace('found opposed note! ${note.data}');
+					opposed.value = false;
+					opposeNote(note);
+				}
+			}
+			else
+			{
+				opposeNote(note);
+			}
+		}
+	}
+
+	public function findOpposedParam(note):Null<NoteParamData>
+	{
+		for (param in note.params)
+		{
+			if (param.name == 'opposed')
+			{
+				return param;
+			}
+		}
+		return null;
+	}
+
+	public function opposeStrumlines()
+	{
+		if (Gammod.mobile())
+		{
+			// Plan here is to just put the mini-strumline at the opposite side.
+			return;
+		}
+
+		var playerStrumlinePos:FlxPoint = FlxPoint.get(playstate().playerStrumline.x, playstate().playerStrumline.y);
+		var playerStrumlineSpd:Float = playstate().playerStrumline.scrollSpeed;
+
+		final cutoutSize = FullScreenScaleMode.gameCutoutSize.x / 2.5;
+
+		//playstate().playerStrumline.x = playstate().opponentStrumline.x;
+		playstate().playerStrumline.x = (((FlxG.width / 2) - playstate().playerStrumline.width) - Constants.STRUMLINE_X_OFFSET) + (cutoutSize / 2.0);
+		playstate().playerStrumline.y = playstate().opponentStrumline.y;
+
+		playstate().opponentStrumline.x = (FlxG.width - playstate().opponentStrumline.width) - Constants.STRUMLINE_X_OFFSET + cutoutSize;
+		playstate().opponentStrumline.y = playerStrumlinePos.y;
+
+		playstate().playerStrumline.scrollSpeed = playstate().opponentStrumline.scrollSpeed;
+		playstate().opponentStrumline.scrollSpeed = playerStrumlineSpd;
+
+		playstate().comboPopUps.offsets = [200, 0];
+	}
+
+	function onSongEvent(event)
+	{
+		if (isDefault()) return;
+		switch (event.eventData.eventKind)
+		{
+			case 'ScrollSpeed':
+				switch (event.eventData.value.strumline)
+				{
+					case 'player':
+						event.eventData.value.strumline = 'opponent';
+					case 'opponent':
+						event.eventData.value.strumline = 'player';
+				}
+		}
+	}
+
+	public function giveOppositeData(inputData:Int) //Yandere simulator ahh code
+	{
+		switch (inputData)
+		{
+			// OPPONENT NOTES
+			case 4:
+				return 0;
+			case 5:
+				return 1;
+			case 6:
+				return 2;
+			case 7:
+				return 3;
+
+			// PLAYER NOTES
+			case 0:
+				return 4;
+			case 1:
+				return 5;
+			case 2:
+				return 6;
+			case 3:
+				return 7;
+		}
+	}
+}

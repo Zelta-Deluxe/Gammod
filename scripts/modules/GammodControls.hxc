@@ -1,0 +1,265 @@
+package gammod;
+
+import funkin.modding.module.Module;
+import funkin.modding.module.ModuleHandler;
+import funkin.modding.module.ScriptedModule;
+import funkin.save.Save;
+import flixel.FlxG;
+import funkin.ui.options.ControlsMenu;
+import funkin.ui.options.OptionsState;
+import funkin.ui.AtlasText;
+import funkin.ui.TextMenuItem;
+import haxe.ds.StringMap;
+import funkin.util.InputUtil;
+import funkin.ui.Prompt;
+import funkin.ui.ButtonStyle;
+import funkin.input.Control;
+import funkin.input.Device;
+
+// Why the FUCK is the controls menu so hardcoded? I hope they turn this into a modular thing soon.
+
+// Bit janky but hey it works!
+// TODO: Soft code this to add new controls
+class GammodControls extends ScriptedModule
+{
+	public final DEFAULT_CONTROLS:StringMap<Array<Int>> = new StringMap();
+
+	var rebindPrompt: Prompt;
+	var pressedKey: Int;
+
+	/*
+	 * If set to false, every keybind will stay at its default value, and the options menu won't be modified at all. 
+	 */
+	static var ALLOW_CUSTOM_KEYBINDS:Bool = true;
+
+	/*
+	 * Each value is {name of the option} => {controls that can't clash with it}
+	 */
+	public var uncompatibleControls:StringMap<Array<Control>> = new StringMap();
+
+	/*
+	 * Checks if a key registered by GAMMOD is pressed.
+	 */
+	public static function pressed(id:String)
+	{
+		return FlxG.keys.anyPressed(getInputsFor(id));
+	}
+
+	/*
+	 * Checks if a key registered by GAMMOD was just pressed.
+	 */
+	public static function justPressed(id:String)
+	{
+		return FlxG.keys.anyJustPressed(getInputsFor(id));
+	}
+
+	/*
+	 * Checks if a key registered by GAMMOD was just released.
+	 */
+	public static function justReleased(id:String)
+	{
+		return FlxG.keys.anyJustReleased(getInputsFor(id));
+	}
+
+	/*
+	 * Gets the inputs for a registered GAMMOD keybind.
+	 */
+	public static function getInputsFor(id:String)
+	{
+		return ALLOW_CUSTOM_KEYBINDS ? ModuleHandler.getModule('GammodControls').controlsSave().get(id) : DEFAULT_CONTROLS[id];
+	}
+
+	override public function new()
+	{
+		super('GammodControls');
+
+		DEFAULT_CONTROLS.set('modifiers', [16,0]);
+
+		uncompatibleControls.set('modifiers', [Control.FREEPLAY_CHAR_SELECT]);
+	}
+
+	function controlsSave():StringMap
+	{
+		if (Save.instance.getModOptions('Gammod').controls == null)
+		{
+			Save.instance.getModOptions('Gammod').controls = DEFAULT_CONTROLS.copy(); // No save? Alr, all defult values
+		}
+		return Save.instance.getModOptions('Gammod').controls;
+	}
+
+	public function onStateChangeEnd(event)
+	{
+		if (event.targetState is OptionsState && ALLOW_CUSTOM_KEYBINDS)
+		{
+			var options = event.targetState;
+			var controls = options.optionsCodex.pages['controls'];
+
+			var labels:FlxTypedGroup = controls.labels;
+			var headers:FlxTypedGroup = controls.members[1];
+			var grid = controls.controlGrid;
+
+			var charSelectY:Int = 0;
+			var charSelectIndx: Int = 0;
+
+			var freeplayCatY:Int = 0;
+			var freeplayCatIndx: Int = 0;
+
+			for (label in labels.members)
+			{
+				if (label.text == 'CHAR SELECT')
+				{
+					charSelectY = label.y;
+					break;
+				}
+				charSelectIndx += 1;
+			}
+
+			for (header in headers.members)
+			{
+				if (header.text == 'FREEPLAY')
+				{
+					freeplayCatY = header.y;
+					break;
+				}
+				freeplayCatIndx += 1;
+			}
+
+			var newLabel = new AtlasText(ControlsMenu.CONTROL_BASE_X, charSelectY, 'MODIFIERS', 'bold'); // later replace 'modifiers' by i
+			labels.insert((charSelectIndx + 1), newLabel);
+			newLabel.alpha = 0.6;
+
+			for (label in labels.members.slice(charSelectIndx + 1))
+			{
+				label.y += 70;
+			}
+
+			for (item in grid.members.slice((charSelectIndx + 1) * 2))
+			{
+				item.y += 70;
+			}
+
+			for (header in headers.members.slice(freeplayCatIndx + 1))
+			{
+				header.y += 70;
+			}
+
+			var controlsSave:StringMap = controlsSave();
+			var savedKeys:Array<Int> = controlsSave.get('modifiers'); // later replace 'modifiers' by i
+			
+			var index:Int = 0;
+			for (key in savedKeys)
+			{
+				var keyName:String = (savedKeys[index] == 0 ? '---' : InputUtil.getKeyName(savedKeys[index]));
+				var newItem:TextMenuItem = new TextMenuItem(newLabel.x + ControlsMenu.CONTROL_MARGIN_X + index * ControlsMenu.CONTROL_SPACING_X, charSelectY + 70, keyName, 'default', openRebindDialogue);
+				newItem.fireInstantly = true;
+				if (grid.length == grid.selectedIndex) newItem.select();
+				grid.byName[newItem.name] = newItem;
+				grid.insert(((charSelectIndx + 1) * 2) + index, newItem);
+
+				index += 1;
+			}
+			for (item in grid.members)
+			{
+				trace(item.name);
+			}
+
+			controls.controlGrid.onChange.removeAll();
+			controls.controlGrid.onChange.add
+			(
+				function(item:TextMenuItem)
+				{
+					controls.camFollow.y = item.y;
+
+					labels.forEach((label:FlxSprite) -> label.alpha = 0.6);
+					labels.members[Std.int(controls.controlGrid.selectedIndex / 2)].alpha = 1.0;
+				}
+			);
+
+			rebindPrompt = new Prompt("\nPress any key to rebind\n\n\nBackspace to unbind\n    Escape to cancel", ButtonStyle.None);
+			rebindPrompt.create();
+			rebindPrompt.createBgFromMargin(100, 0xFFfafd6d);
+			rebindPrompt.back.scrollFactor.set(0, 0);
+			rebindPrompt.exists = false;
+			controls.add(rebindPrompt);
+		}
+	}
+
+	function openRebindDialogue()
+	{
+		var controls = FlxG.state.optionsCodex.pages['controls'];
+		pressedKey = FlxG.keys.firstJustPressed();
+
+		controls.controlGrid.enabled = false;
+		controls.canExit = false;
+		rebindPrompt.exists = true;
+	}
+
+	function closeRebindDialogue()
+	{
+		var controls = FlxG.state.optionsCodex.pages['controls'];
+
+		controls.controlGrid.enabled = true;
+		controls.canExit = true;
+		rebindPrompt.exists = false;
+	}
+
+	function bindKey(control:String, to_key:Int)
+	{
+		var controls:Page = FlxG.state.optionsCodex.pages['controls'];
+		
+		var controlsSave:StringMap = controlsSave();
+		var isLeft:Bool = controls.controlGrid.selectedIndex % 2 == 0;
+		var leftValue:Int = isLeft ? to_key : controlsSave.get(control)[0];
+		var rightValue:Int = !isLeft ? to_key : controlsSave.get(control)[1];
+
+		if (((isLeft ? leftValue : rightValue) != 0) && leftValue == rightValue) return;
+
+		var selectedItem:AtlasText = controls.controlGrid.selectedItem;
+		var keyName:String = (to_key == 0 ? '---' : InputUtil.getKeyName(to_key));
+		selectedItem.label.text = keyName;
+		
+		controlsSave.set(control, [leftValue,rightValue]);
+	}
+
+	function waitForRebind()
+	{
+		if (rebindPrompt?.exists)
+		{
+			var key = FlxG.keys.firstJustReleased();
+
+			if (pressedKey == key || key == null)
+			{ 
+				pressedKey = null;
+				return;
+			}
+
+			if (![0,-1].contains(key))
+			{
+				var controls:Page = FlxG.state.optionsCodex.pages['controls'];
+				for (control in uncompatibleControls['modifiers']) // fuck it, they hardcoded it too THEY CANT TELL ME WHAT TO DO
+				{
+					var inputs:Array<Int> = FlxG.state.controls.getInputsFor(control, Device.Keys);
+					if (inputs.contains(key))
+					{
+						key = 27; // we back gng, can't do this shi
+						break;
+					}
+				}
+				switch (key)
+				{
+					case 27:
+					case 8:
+					    bindKey('modifiers', 0);
+					default:
+					    bindKey('modifiers', key);
+				}
+				closeRebindDialogue();
+			}
+		}
+	}
+
+	function onUpdate(event)
+	{
+		if (FlxG.state is OptionsState && ALLOW_CUSTOM_KEYBINDS) waitForRebind();
+	}
+}

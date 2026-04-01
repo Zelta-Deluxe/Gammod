@@ -1,0 +1,139 @@
+import funkin.modding.module.Module;
+import funkin.modding.module.ModuleHandler;
+import funkin.play.PlayState;
+import gammod.modifiers.GammodModType;
+import gammod.modifiers.GammodPlatform;
+import gammod.modifiers.GammodModifier;
+
+// KNOWN BUG: When changing difficulty through the pause menu, the resulting chart is not changed.
+// Not a big deal since this is not a game-changer modifier, but its still annoying for people that use that button.
+// but.... idk how to fix ts
+
+// TODO
+// - Check if a note wants to spawn mid-other note's trail to put it in a different position or crop the trail if there's no more options
+// - Check if a note wants to spawn on top of another note or extremely close to it to put it in a different position
+class GammodNotePlacement extends GammodModifier
+{
+	override public function new()
+	{
+		super('GammodNotePlacement', GammodModType.LIST(['NORMAL', 'MIRROR', 'RANDOM W/ JACKS', 'RANDOM W/O JACKS']), {default_value:'NORMAL'});
+
+		display_name = 'Note Placement';
+		colors = [0xff9cc2ff,0xff415ee0];
+		multiplier = [0.0, 0.0, null, null];
+		description = 'CHANGES HOW NOTES ARE PLACED IN A SONG';
+
+		priority = 67; // that was NOT the wind
+	}
+
+	public function onSongLoaded(chart:SongLoadScriptEvent) 
+	{
+		switch (value)
+		{
+			case 'MIRROR':
+				mirrorChart(chart);
+			case 'RANDOM W/ JACKS':
+				shuffleChart(chart, false);
+			case 'RANDOM W/O JACKS':
+				shuffleChart(chart, true);
+		}
+	}
+
+	public function onSongRetry(event:SongRetryEvent) 
+	{
+		if (isDefault() || (difficultyChanged && !firstDiffChangeDone)) return;
+
+		switch (value)
+		{
+			case 'MIRROR':
+				mirrorChart(playstate().currentChart);
+			case 'RANDOM W/ JACKS':
+				shuffleChart(playstate().currentChart, false);
+			case 'RANDOM W/O JACKS':
+				shuffleChart(playstate().currentChart, true);
+		}
+	}
+
+	/*
+	 * Inverts the note directions inside a given chart.
+	 */
+	public function mirrorChart(chart:SongDifficulty)
+	{
+		for (note in chart.notes)
+		{
+			switch (note.data) // Is this just note.data = Math.abs(note.data - 3)?
+			{
+				// PLAYER NOTES
+				case 0:
+					note.data = 3;
+				case 1:
+					note.data = 2;
+				case 2:
+					note.data = 1;
+				case 3:
+					note.data = 0;
+
+				// OPPONENT NOTES
+				case 4:
+					note.data = 7;
+				case 5:
+					note.data = 6;
+				case 6:
+					note.data = 5;
+				case 7:
+					note.data = 4;
+			}
+		}
+	}
+
+	/*
+	 * Randomly changes the note directions inside a given chart.
+	 * If `avoid_jacks` is true, a note direction can't repeat twice in a row.
+	 */
+	public function shuffleChart(chart:SongDifficulty, avoid_jacks:Bool = false)
+	{
+		var index: Int = 0;
+		initialSeed = 1;
+		var prevOpData:Int = -1;
+		var prevPlayData:Int = -1;
+		for (note in chart.notes)
+		{
+			var playerNote:Bool = note.getMustHitNote();
+			var newData:Int = null;
+
+			if (avoid_jacks)
+			{
+				if (playerNote)
+				{
+					while (true)
+					{
+						newData = FlxG.random.int(0,3);
+						if (prevPlayData != newData) break;
+					}
+				}
+				else
+				{
+					while (true)
+					{
+						newData = FlxG.random.int(4,7);
+						if (prevOpData != newData) break;
+					}
+				}
+			}
+			note.data = (newData == null) ? FlxG.random.int(playerNote ? 0 : 4,playerNote ? 3 : 7) : newData;
+			
+			initialSeed += 1;
+
+			index += 1;
+
+			if (playerNote)
+			{
+				prevPlayData = newData;
+			}
+			else
+			{
+				prevOpData = newData;
+			}
+		}
+	}
+}

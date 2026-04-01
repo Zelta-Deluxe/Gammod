@@ -1,0 +1,117 @@
+import funkin.modding.module.Module;
+import funkin.modding.module.ModuleHandler;
+import funkin.play.PlayState;
+import funkin.util.Constants;
+import flixel.math.FlxMath;
+import funkin.ui.freeplay.FreeplayState;
+import flixel.FlxG;
+import gammod.modifiers.GammodModType;
+import gammod.modifiers.GammodPlatform;
+import funkin.Conductor;
+import gammod.modifiers.GammodModifier;
+import gammod.options.GammodOptionsModule as GammodOptions;
+
+class GammodPlaybackRate extends GammodModifier
+{
+	var needsBPMChange: Bool = false;
+	var previous_bpm: Float = 0;
+
+	public function new()
+	{
+		super('GammodPlaybackRate', GammodModType.FLOATRANGE(0.5, 3.0, 0.05), {default_value: 1.0});
+
+		display_name = 'Playback Rate';
+		colors = [0xffd400ff, 0xffa20060];
+		multiplier = 
+		{
+			fromValue: true, // If true, other values will be ignored and the added multiplier will be generated directly from the value.
+			addition: 0.0, // The value we'll work with for the mult (read more).
+			reversable: null, // If true, values below default will invert the added multiplier. (value: 0.5 (default: 1, step_value: 0.1); addition: 1; mult => -5)
+			perStep: null // If true, multiplier will be `addition` times the amount of steps away from the value. If not, `addition` will just be added if the value is not default.
+		};
+		description = 'THE SPEED THE SONG WILL PLAY AT';
+		prefix = {shape:'x',at_default:true};
+	}
+
+	override public function onCountdownStart(event) 
+	{
+		super.onCountdownStart(event);
+
+		if (isDefault()) return;
+		needsBPMChange = true;
+		PlayState.instance.playbackRate = value;
+		PlayState.instance.playerStrumline.scrollSpeed = PlayState.instance.currentChart.scrollSpeed / PlayState.instance.playbackRate;
+		PlayState.instance.opponentStrumline.scrollSpeed = PlayState.instance.currentChart.scrollSpeed / PlayState.instance.playbackRate;
+	}
+
+	function onSongEvent(event)
+	{
+		if (isDefault()) return;
+		switch (event.eventData.eventKind)
+		{
+			case 'ScrollSpeed':
+				trace('');
+				trace('SCROLL SPEED CHANGE:');
+				trace(event.eventData.value);
+				trace('');
+				event.eventData.value.duration = (event.eventData.value.duration ?? 4) / PlayState.instance.playbackRate;
+				event.eventData.value.scroll = (event.eventData.value.scroll ?? 1) / PlayState.instance.playbackRate;
+			case 'FocusCamera':
+				if (event.eventData.value.duration != null)
+				{
+					event.eventData.value.duration = event.eventData.value.duration / PlayState.instance.playbackRate;
+				}
+			case 'ZoomCamera':
+				trace('');
+				trace('ZOOM CAMERA CHANGE:');
+				trace(event.eventData.value);
+				trace('');
+				event.eventData.value.duration = (event.eventData.value.duration ?? 4) / PlayState.instance.playbackRate;
+		}
+	}
+
+	public function onUpdate()
+	{
+		if (isDefault()) return;
+		//if (FlxG.keys.justPressed.N) trace(Conductor.instance.bpm);
+
+		// I don't know if cancelling the countdown and making my own new one is worth it.
+		// At least it would be cleaner than starting the song with a bpm that doesnt actually work properly but sounds good and then changing it to the original one.
+		// Forcing bpm's (specially mid song) sounds like a bad idea
+
+		// The thing is, if a mod wants its song to not start with a countdown. How do i acCOUNT(down) on that?
+		// I'll leave it with the werid countdown for now... At least its more stable since countdowns do not care about playback rate for some reason.
+		if (Conductor.instance?.bpm != null)
+		{
+			if (needsBPMChange)
+			{
+				//trace('ASKED FOR BPM CHANGE' + Conductor.instance.bpm);
+				//Conductor.instance.forceBPM(Conductor.instance.bpm * value);
+				//trace('NEW BPM: ' + Conductor.instance.bpm);
+				needsBPMChange = false;
+			}
+		}
+		
+		if (!(GammodOptions.get('stagePlaybackRate') && value != 1 && !PlayState.instance.isInCutscene && PlayState.instance.subState == null && !PlayState.instance.isGameOverState)) return;
+		for (prop in (PlayState.instance.currentStage?.members ?? []))
+		{
+			if (prop?.animation != null)
+			{
+				prop.animation.timeScale = (ModuleHandler.getModule('GammodPlaybackRate')?.value ?? 1.0);
+			}
+		}
+	}
+
+	public function onGameOver()
+	{
+		if (isDefault()) return;
+		if (!(GammodOptions.get('stagePlaybackRate') && value != 1)) return;
+		for (prop in (PlayState.instance.currentStage?.members ?? []))
+		{
+			if (prop?.animation != null)
+			{
+				prop.animation.timeScale = 1.0;
+			}
+		}
+	}
+}

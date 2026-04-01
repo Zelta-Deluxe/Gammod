@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="utf-8"?><TextureAtlas imagePath="tv.png">
+	<!-- Created with Adobe Animate version 22.0.3.179 -->
+	<!-- http://www.adobe.com/products/animate.html -->
+	<SubTexture name="faggot gaming TV0000" x="355" y="1147" width="356" height="381" frameX="0" frameY="-1" frameWidth="357" frameHeight="383"/>
+	<SubTexture name="faggot gaming TV0001" x="711" y="1147" width="349" height="381" frameX="-1" frameY="-2" frameWidth="357" frameHeight="383"/>
+	<SubTexture name="faggot gaming TV0002" x="1400" y="1529" width="346" height="380" frameX="-1" frameY="-2" frameWidth="357" frameHeight="383"/>
+	<SubTexture name="faggot gaming TV0003" x="710" y="0" width="356" height="382" frameX="-1" frameY="0" frameWidth="357" frameHeight="383"/>
+	<SubTexture name="faggot gaming TV0004" x="0" y="0" width="355" height="383" frameX="-1" frameY="0" frameWidth="357" frameHeight="383"/>
+	<SubTexture name="faggot gaming TV0005" x="1066" y="0" width="348" height="382" frameX="-1" frameY="-1" frameWidth="357" frameHeight="383"/>
+	<SubTexture name="faggot gaming TV0006" x="1414" y="0" width="345" height="382" frameX="-1" frameY="-1" frameWidth="357" frameHeight="383"/>
+	<SubTexture name="faggot gaming TV0007" x="0" y="383" width="355" height="382" frameX="-1" frameY="0" frameWidth="357" frameHeight="383"/>
+	<SubTexture name="faggot gaming TV0008" x="355" y="383" width="355" height="382" frameX="-1" frameY="0" frameWidth="357" frameHeight="383"/>
+	<SubTexture name="faggot gaming TV0009" x="1060" y="1147" width="348" height="381" frameX="-1" frameY="-1" frameWidth="357" frameHeight="383"/>
+	<SubTexture name="faggot gaming TV0010" x="1408" y="1147" width="345" height="381" frameX="-1" frameY="-1" frameWidth="357" frameHeight="383"/>
+	<SubTexture name="faggot gaming TV0011" x="710" y="383" width="356" height="382" frameX="-1" frameY="0" frameWidth="357" frameHeight="383"/>
+	<SubTexture name="faggot gaming TV0012" x="1066" y="383" width="356" height="382" frameX="-1" frameY="0" frameWidth="357" frameHeight="383"/>
+	<SubTexture name="faggot gaming TV0013" x="0" y="1910" width="348" height="380" frameX="-1" frameY="-2" frameWidth="357" frameHeight="383"/>
+	<SubTexture name="faggot gaming TV0014" x="348" y="1910" width="346" height="380" frameX="-1" frameY="-2" frameWidth="357" frameHeight="383"/>
+	<SubTexture name="faggot gaming TV0015" x="0" y="1529" width="356" height="381" frameX="0" frameY="-1" frameWidth="357" frameHeight="383"/>
+	<SubTexture name="faggot gaming TV0016" x="356" y="1529" width="349" height="381" frameX="-1" frameY="-2" frameWidth="357" frameHeight="383"/>
+	<SubTexture name="faggot gaming TV0017" x="694" y="1910" width="346" height="380" frameX="-1" frameY="-2" frameWidth="357" frameHeight="383"/>
+	<SubTexture name="faggot gaming TV0018" x="1422" y="383" width="356" height="382" frameX="-1" frameY="0" frameWidth="357" frameHeight="383"/>
+	<SubTexture name="faggot gaming TV0019" x="355" y="0" width="355" height="383" frameX="-1" frameY="0" frameWidth="357" frameHeight="383"/>
+	<SubTexture name="faggot gaming TV0020" x="0" y="765" width="348" height="382" frameX="-1" frameY="-1" frameWidth="357" frameHeight="383"/>
+	<SubTexture name="faggot gaming TV0021" x="348" y="765" width="345" height="382" frameX="-1" frameY="-1" frameWidth="357" frameHeight="383"/>
+	<SubTexture name="faggot gaming TV0022" x="693" y="765" width="355" height="382" frameX="-1" frameY="0" frameWidth="357" frameHeight="383"/>
+	<SubTexture name="faggot gaming TV0023" x="1048" y="765" width="355" height="382" frameX="-1" frameY="0" frameWidth="357" frameHeight="383"/>
+	<SubTexture name="faggot gaming TV0024" x="705" y="1529" width="349" height="381" frameX="-1" frameY="-1" frameWidth="357" frameHeight="383"/>
+	<SubTexture name="faggot gaming TV0025" x="1054" y="1529" width="346" height="381" frameX="-1" frameY="-1" frameWidth="357" frameHeight="383"/>
+	<SubTexture name="faggot gaming TV0026" x="1403" y="765" width="356" height="382" frameX="-1" frameY="0" frameWidth="357" frameHeight="383"/>
+	<SubTexture name="faggot gaming TV0027" x="0" y="1147" width="355" height="382" frameX="-1" frameY="0" frameWidth="357" frameHeight="383"/>
+	<SubTexture name="faggot gaming TV0028" x="1040" y="1910" width="349" height="380" frameX="-1" frameY="-2" frameWidth="357" frameHeight="383"/>
+	<SubTexture name="faggot gaming TV0029" x="1389" y="1910" width="347" height="380" frameX="0" frameY="-2" frameWidth="357" frameHeight="383"/>
+</TextureAtlas>

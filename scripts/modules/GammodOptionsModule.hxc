@@ -1,0 +1,115 @@
+package gammod.options;
+
+import funkin.modding.module.Module;
+import funkin.ui.options.OptionsState;
+import funkin.ui.options.OptionsMenu;
+import funkin.ui.Page;
+import funkin.save.Save;
+import haxe.ds.StringMap;
+import funkin.modding.module.ModuleHandler;
+
+class GammodOptionsModule extends Module
+{
+	var default_options: Map<String, Dynamic> =
+	[
+		'showUnranked' => true,
+		'showMult' => true,
+		'highscoreEffects' => true,
+		'modifierEffects' => true,
+		'stagePlaybackRate' => true
+	];
+
+	function new()
+	{
+		super('GammodOptionsModule');
+	}
+
+	public function onStateChangeEnd(event)
+	{
+		if (event.targetState is OptionsState)
+		{
+			setupSaves();
+			event.targetState.optionsCodex.pages['preferences'].createPrefItemCheckbox
+			(
+				'Show Unranked', 
+				'If your freeplay run is unranked, shows a text in the HUD next to the score telling so.', 
+				function(value:Bool):Void 
+				{
+					setupSaves();
+      				Save.instance.getModOptions('Gammod').options.set('showUnranked', value);
+    				},
+				Save.instance.getModOptions('Gammod').options?.get('showUnranked') ?? GammodOptionsModule.get('showUnranked')
+			);
+			event.targetState.optionsCodex.pages['preferences'].createPrefItemCheckbox
+			(
+				'Show Mult', 
+				'If any score multiplier is on, shows a text in the HUD below the score showing it.', 
+				function(value:Bool):Void 
+				{
+					setupSaves();
+      				Save.instance.getModOptions('Gammod').options.set('showMult', value);
+    				},
+				Save.instance.getModOptions('Gammod').options?.get('showMult') ?? GammodOptionsModule.get('showMult')
+			);
+			event.targetState.optionsCodex.pages['preferences'].createPrefItemCheckbox
+			(
+				'Highscore Effects', 
+				'Playing in freeplay will trigger cool effects when you reach the highscore for that song.', 
+				function(value:Bool):Void 
+				{
+					setupSaves();
+      				Save.instance.getModOptions('Gammod').options.set('highscoreEffects', value);
+    				},
+				Save.instance.getModOptions('Gammod').options?.get('highscoreEffects') ?? GammodOptionsModule.get('highscoreEffects')
+			);
+			event.targetState.optionsCodex.pages['preferences'].createPrefItemCheckbox
+			(
+				'Modifier Effects', 
+				"Whether gameplay modifiers can play effects on the HUD or not.", 
+				function(value:Bool):Void 
+				{
+					setupSaves();
+      				Save.instance.getModOptions('Gammod').options.set('modifierEffects', value);
+    				},
+				Save.instance.getModOptions('Gammod').options?.get('modifierEffects') ?? GammodOptionsModule.get('modifierEffects')
+			);
+			if (ModuleHandler.getModule('GammodPlaybackRate') != null) // Just in case you delete the Playback Rate modifier because you're STUPID.
+			{
+				event.targetState.optionsCodex.pages['preferences'].createPrefItemCheckbox
+				(
+					'Stage Playback Rate', 
+					'If enabled, the Playback Rate modifier will also change the animation speed of everything in the game camera.', 
+					function(value:Bool):Void 
+					{
+						setupSaves();
+	      				Save.instance.getModOptions('Gammod').options.set('stagePlaybackRate', value);
+	    				},
+					Save.instance.getModOptions('Gammod').options?.get('stagePlaybackRate') ?? GammodOptionsModule.get('stagePlaybackRate')
+				);
+			}
+		}
+	}
+
+	static public function get(option:String)
+	{
+		ModuleHandler.getModule('GammodOptionsModule').setupSaves();
+		return Save.instance.getModOptions('Gammod').options.get(option);
+	}
+
+	public function setupSaves()
+	{
+		var save = Save.instance.getModOptions('Gammod');
+		if (save.options == null) 
+		{
+			save.options = new StringMap();
+			trace('[GAMMOD] (SAVES) Initialized "Options" save successfully.');
+		}
+		for (option in default_options.keys())
+		{
+			if (save.options.get(option) == null)
+			{
+				save.options.set(option, default_options[option]);
+			}
+		}
+	}
+}

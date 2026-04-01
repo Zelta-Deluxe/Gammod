@@ -1,0 +1,44 @@
+package gammod.modifiers;
+
+/*
+ * The different types of modifiers there are. You use this to define a modifier's type and parameters.
+ * A bit more tidy than using strings for allat...
+ */
+enum GammodModType
+{
+	SWITCH;
+	LIST(values:Array<String>); // Needs an array of strings with all the values the list has.
+	INTRANGE(min:Int, max:Int, step:Int); // The minimum and maximum value the range has. Step is how much you move when you press right or left.
+	FLOATRANGE(min:Float, max:Float, step:Float); // The minimum and maximum value the range has. Step is how much you move when you press right or left.
+}
+
+/*
+ * Just a little utility since FNF' overcomplicates platforms (for a good reason but yeah, ionneedit).
+ * If ´hard_ban´ is true, the modifier will not even be registered by Gammod and will just be left as its own standalone Module.
+ */
+enum GammodPlatform
+{
+	MOBILE(hard_ban:Bool);
+	PC(hard_ban:Bool);
+}
+
+/*
+ * Used when you need to define what modifiers will get disabled when another modifier is enabled.
+ * If you have two modifiers that compete and do not work together, you can make A disable B when enabled and viceversa.
+ * 
+ * WIP: I want to make this work properly! My idea is to allow GammodModType.LIST() to only disable that other modifier on CERTAIN values of the list.
+ */
+typedef GammodIncompat =
+{
+	var platforms:Array<GammodPlatform>;
+	var modifiers:Array<String>;
+}
+
+/*
+ * For defining prefixes and suffixes when you display a modifier.
+ */
+typedef GammodMorpheme =
+{
+	var shape:String; // The string in which the morpheme consists.
+	var at_default:Bool; // Whether the morpheme will appear if the modifier is at its default value.
+}

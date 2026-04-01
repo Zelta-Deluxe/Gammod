@@ -1,0 +1,34 @@
+import funkin.modding.module.Module;
+import funkin.modding.module.ModuleHandler;
+import gammod.modifiers.GammodModType;
+import gammod.modifiers.GammodPlatform;
+import gammod.modifiers.GammodModifier;
+import funkin.play.PlayState;
+
+class GammodCustomScrollSpeed extends GammodModifier
+{
+	public function new()
+	{
+		super('GammodCustomScrollSpeed', GammodModType.FLOATRANGE(1.0, 4.0, 0.1), {default_value: 2.0, pre_default: 'Disabled'});
+
+		display_name = 'Custom Scroll Speed';
+		colors = [0xffff9900, 0xffff4d00];
+		multiplier = 
+		{
+			fromValue: false, // If true, other values will be ignored and the added multiplier will be generated directly from the value.
+			addition: null, // The value we'll work with for the mult (read more).
+			reversable: null, // If true, values below default will invert the added multiplier. (value: 0.5 (default: 1, step_value: 0.1); addition: 1; mult => -5)
+			perStep: null // If true, multiplier will be `addition` times the amount of steps away from the value. If not, `addition` will just be added if the value is not default.
+		};
+		description = 'SHARES SCROLL SPEED BETWEEN SONGS';
+	}
+
+	public function onCountdownStart(event)
+	{
+		if (Std.string(value) != 'Disabled')
+		{
+			PlayState.instance.playerStrumline.scrollSpeed = value / PlayState.instance.playbackRate;
+			PlayState.instance.opponentStrumline.scrollSpeed = value / PlayState.instance.playbackRate;
+		}
+	}
+}

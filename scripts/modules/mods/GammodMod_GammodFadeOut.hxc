@@ -1,0 +1,94 @@
+import funkin.modding.module.Module;
+import funkin.modding.module.ModuleHandler;
+import funkin.play.PlayState;
+import flixel.math.FlxMath;
+import funkin.Conductor;
+import funkin.util.Constants;
+import flixel.FlxG;
+import funkin.util.GRhythmUtil;
+import funkin.Preferences;
+import gammod.modifiers.GammodModType;
+import gammod.modifiers.GammodPlatform;
+import gammod.util.GammodTweenManager as Tweens;
+import gammod.modifiers.GammodModifier;
+import Math;
+
+/*
+ * I THOUGHT THIS SHIT WORKED GRRRRRRR
+ */
+
+class GammodFadeOut extends GammodModifier
+{
+	var fade_speed:Float = 0.2;
+	var fade_delay:Float = 1.1;
+
+	public function new()
+	{
+		super('GammodFadeOut', GammodModType.SWITCH, {default_value: false});
+
+		display_name = 'Fade Out';
+		colors = [0xFF00aaff,0xffff9900];
+		multiplier = 0.2;
+		description = "NOTES FADE OUT BEFORE THEY'RE PRESSED";
+		banned_platforms = [GammodPlatform.PC(true), GammodPlatform.MOBILE(true)];
+	}
+
+	public override function onNoteIncoming(event:NoteScriptEvent) 
+	{
+		if (value)
+		{
+			
+		}
+	}
+
+	public function onUpdate()
+	{
+		if (value)
+		{
+			for (note in PlayState.instance.playerStrumline.notes.members)
+			{
+				if (note.y >= (FlxG.height/2) - 150)
+				{
+					Tweens.tween
+					(
+						'fadeOut_note' + note.ID,
+						note,
+						{ alpha: 0 },
+						0.1 / PlayState.instance.playerStrumline.scrollSpeed,
+						0
+					);
+				}
+				else
+				{
+					note.alpha = 1;
+				}
+			}
+			for (holdNote in PlayState.instance.playerStrumline.holdNotes.members)
+			{
+				if (holdNote.y >= (FlxG.height/2) - 150)
+				{
+					Tweens.tween
+					(
+						'fadeOut_holdNote' + holdNote.ID,
+						holdNote,
+						{ alpha: 0 },
+						0.1 / PlayState.instance.playerStrumline.scrollSpeed,
+						0
+					);
+				}
+				else
+				{
+					holdNote.alpha = 1;
+				}
+			}
+		}
+	}
+
+	// 0.5 PARA BLAZING [HARD] (x3.2)
+	// 1 PARA BOPEEBO PICO MIX [EASY] (x1.5)
+
+	public function onPause(event:PauseScriptEvent) 
+	{
+		ModuleHandler.getModule('GammodTweenManager').batchPause('fadeOut_note');
+	}
+}

@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<TextureAtlas imagePath="multResults.png">
+<SubTexture name="multResults appear0000" x="0" y="38" width="16" height="20" frameX="-12" frameY="-9" frameWidth="38" frameHeight="38" />
+<SubTexture name="multResults appear0001" x="58" y="0" width="23" height="27" frameX="-8" frameY="-6" frameWidth="38" frameHeight="38" />
+<SubTexture name="multResults appear0002" x="0" y="0" width="30" height="38" frameX="-4" frameY="0" frameWidth="38" frameHeight="38" />
+<SubTexture name="multResults appear0003" x="30" y="0" width="28" height="35" frameX="-5" frameY="-1" frameWidth="38" frameHeight="38" />
+</TextureAtlas>
