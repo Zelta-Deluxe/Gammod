@@ -1,5 +1,5 @@
 # Gammod
-![Showcase image](github_image.png)
+![Showcase image](gihub_image.png)
 
 # THIS REPO IS MAINLY USED FOR THE WIKI, CODE IS NOT UPDATED VERY OFTEN. TO DOWNLOAD THE CODE IT IS BETTER TO JUST UNZIP THE MOD FILE THAT YOU CAN GET IN GAMEBANANA.
 
